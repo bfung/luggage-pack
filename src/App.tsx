@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AppState, LuggageProfile, PackingCubeItem, UnitSystem } from './types';
+import { AppState, LuggageProfile, PackingCubeItem, SuggestedCubeRecommendation, UnitSystem } from './types';
 import { loadStoredState, saveStateToStorage, INITIAL_STATE } from './utils/storage';
 import { calculateOptimalPacking } from './utils/packingAlgorithm';
 import { Header } from './components/Header';
 import { LuggageManager } from './components/LuggageManager';
 import { CubeManager } from './components/CubeManager';
 import { PackingVisualizer } from './components/PackingVisualizer';
+import { CubePurchaseSuggestions } from './components/CubePurchaseSuggestions';
 import { DEFAULT_CUBES_PRESETS, DEFAULT_LUGGAGE_PRESETS } from './utils/presets';
+import { Box, ShoppingBag, Sparkles, ArrowRight, Check } from 'lucide-react';
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>(() => loadStoredState());
   const [calcNonce, setCalcNonce] = useState(0);
+  const [activeSection, setActiveSection] = useState<'workspace' | 'suggestions'>('workspace');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Sync state to local storage whenever it changes
   useEffect(() => {
@@ -146,6 +150,47 @@ export default function App() {
     }));
   };
 
+  // Handlers for Suggested Cubes to Buy
+  const handleAddSuggestedCube = (rec: SuggestedCubeRecommendation) => {
+    const newCube: PackingCubeItem = {
+      id: `suggested-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: rec.name,
+      dimensions: rec.dimensions,
+      color: rec.color,
+      category: rec.category,
+      quantity: 1,
+      allowRotation: true,
+    };
+
+    setAppState((prev) => ({
+      ...prev,
+      cubesList: [...prev.cubesList, newCube],
+    }));
+
+    setToastMessage(`Added "${rec.name}" to your cubes list! You can now test it in your 3D layout.`);
+    setTimeout(() => setToastMessage(null), 4500);
+  };
+
+  const handleAddBundle = (bundle: SuggestedCubeRecommendation[]) => {
+    const newCubes: PackingCubeItem[] = bundle.map((rec, i) => ({
+      id: `suggested-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+      name: rec.name,
+      dimensions: rec.dimensions,
+      color: rec.color,
+      category: rec.category,
+      quantity: 1,
+      allowRotation: true,
+    }));
+
+    setAppState((prev) => ({
+      ...prev,
+      cubesList: [...prev.cubesList, ...newCubes],
+    }));
+
+    setToastMessage(`Added recommended 2-piece cube set to your cubes list!`);
+    setTimeout(() => setToastMessage(null), 4500);
+  };
+
   return (
     <div className="min-h-screen bg-neutral-100/70 text-neutral-900 font-sans flex flex-col">
       {/* Top Navigation */}
@@ -159,49 +204,151 @@ export default function App() {
         onImportState={handleImportState}
       />
 
-      {/* Main Workspace */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Column: Luggage & Cubes Manager (5 cols on lg) */}
-          <div className="lg:col-span-5 space-y-6">
-            <LuggageManager
-              units={appState.units}
-              luggageList={appState.luggageList}
-              selectedLuggageId={appState.selectedLuggageId}
-              onSelectLuggage={handleSelectLuggage}
-              onAddLuggage={handleAddLuggage}
-              onUpdateLuggage={handleUpdateLuggage}
-              onDeleteLuggage={handleDeleteLuggage}
-            />
+      {/* Main Container */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-5">
+        {/* Section Navigation Switcher */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-neutral-200 shadow-2xs">
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => setActiveSection('workspace')}
+              className={`inline-flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeSection === 'workspace'
+                  ? 'bg-neutral-900 text-white shadow-2xs'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+              }`}
+            >
+              <Box className="w-4 h-4" />
+              <span>3D Packing & Arrangement</span>
+            </button>
 
-            <CubeManager
-              units={appState.units}
-              cubesList={appState.cubesList}
-              onAddCube={handleAddCube}
-              onUpdateCube={handleUpdateCube}
-              onDeleteCube={handleDeleteCube}
-              onUpdateQuantity={handleUpdateQuantity}
-              onPackSamplePreset={handlePackSamplePreset}
-            />
+            <button
+              type="button"
+              onClick={() => setActiveSection('suggestions')}
+              className={`inline-flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeSection === 'suggestions'
+                  ? 'bg-purple-900 text-white shadow-2xs'
+                  : 'text-purple-700 hover:text-purple-900 hover:bg-purple-50'
+              }`}
+            >
+              <ShoppingBag className="w-4 h-4 text-purple-400" />
+              <span>Suggested Sizes to Buy</span>
+              <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-purple-100 text-purple-800 font-bold">
+                Optimize Voids
+              </span>
+            </button>
           </div>
 
-          {/* Right Column: Visualizer & Wasted Space Analysis (7 cols on lg) */}
-          <div className="lg:col-span-7">
-            {activeLuggage ? (
-              <PackingVisualizer
-                luggage={activeLuggage}
-                cubes={appState.cubesList}
-                packingResult={packingResult}
-                units={appState.units}
-                onRecalculate={() => setCalcNonce((n) => n + 1)}
-              />
-            ) : (
-              <div className="p-8 text-center bg-white rounded-xl border border-neutral-200">
-                Please select or create a luggage profile.
-              </div>
-            )}
+          {/* Quick Context Readout */}
+          <div className="flex items-center space-x-3 text-xs text-neutral-500 pr-2">
+            <span>
+              Luggage:{' '}
+              <strong className="text-neutral-800 font-medium">{activeLuggage?.name}</strong>
+            </span>
+            <span>·</span>
+            <span>
+              Wasted:{' '}
+              <strong className="text-amber-700 font-mono font-medium">
+                {packingResult.wastedPercentage}%
+              </strong>
+            </span>
           </div>
         </div>
+
+        {/* Toast Notification */}
+        {toastMessage && (
+          <div className="p-3 bg-emerald-900 text-white rounded-xl shadow-md flex items-center justify-between text-xs animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center space-x-2">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{toastMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveSection('workspace')}
+              className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded-md font-semibold shrink-0 cursor-pointer"
+            >
+              <span>View in 3D Layout</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+
+        {/* Section 1: Main Workspace */}
+        {activeSection === 'workspace' && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Column: Luggage & Cubes Manager (5 cols on lg) */}
+            <div className="lg:col-span-5 space-y-6">
+              <LuggageManager
+                units={appState.units}
+                luggageList={appState.luggageList}
+                selectedLuggageId={appState.selectedLuggageId}
+                onSelectLuggage={handleSelectLuggage}
+                onAddLuggage={handleAddLuggage}
+                onUpdateLuggage={handleUpdateLuggage}
+                onDeleteLuggage={handleDeleteLuggage}
+              />
+
+              <CubeManager
+                units={appState.units}
+                cubesList={appState.cubesList}
+                onAddCube={handleAddCube}
+                onUpdateCube={handleUpdateCube}
+                onDeleteCube={handleDeleteCube}
+                onUpdateQuantity={handleUpdateQuantity}
+                onPackSamplePreset={handlePackSamplePreset}
+                onOpenSuggestions={() => setActiveSection('suggestions')}
+              />
+            </div>
+
+            {/* Right Column: Visualizer & Wasted Space Analysis (7 cols on lg) */}
+            <div className="lg:col-span-7">
+              {activeLuggage ? (
+                <PackingVisualizer
+                  luggage={activeLuggage}
+                  cubes={appState.cubesList}
+                  packingResult={packingResult}
+                  units={appState.units}
+                  onRecalculate={() => setCalcNonce((n) => n + 1)}
+                  onOpenSuggestions={() => setActiveSection('suggestions')}
+                />
+              ) : (
+                <div className="p-8 text-center bg-white rounded-xl border border-neutral-200">
+                  Please select or create a luggage profile.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Section 2: Dedicated Suggested Cube Sizes to Buy */}
+        {activeSection === 'suggestions' && activeLuggage && (
+          <div className="space-y-6">
+            <CubePurchaseSuggestions
+              luggage={activeLuggage}
+              cubes={appState.cubesList}
+              packingResult={packingResult}
+              allowRotation={appState.allowRotation}
+              units={appState.units}
+              onAddSuggestedCube={handleAddSuggestedCube}
+              onAddBundle={handleAddBundle}
+            />
+
+            {/* Bottom Navigation CTA */}
+            <div className="p-4 bg-white rounded-xl border border-neutral-200 flex items-center justify-between">
+              <span className="text-xs text-neutral-600">
+                Want to view your updated packing layout with your existing and added cubes?
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveSection('workspace')}
+                className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-neutral-900 text-white text-xs font-semibold hover:bg-neutral-800 transition-colors shadow-2xs cursor-pointer"
+              >
+                <span>Back to 3D Packing Layout</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

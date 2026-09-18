@@ -1,18 +1,20 @@
 import React from 'react';
 import { PackingResult, Dimensions, UnitSystem } from '../types';
 import { formatVolume, fromBase, formatDimensions } from '../utils/units';
-import { AlertTriangle, CheckCircle2, TrendingUp, Sparkles, Box, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, TrendingUp, Sparkles, Box, ShieldAlert, ShoppingBag } from 'lucide-react';
 
 interface WastedSpaceAuditProps {
   luggageDimensions: Dimensions;
   packingResult: PackingResult;
   units: UnitSystem;
+  onOpenSuggestions?: () => void;
 }
 
 export const WastedSpaceAudit: React.FC<WastedSpaceAuditProps> = ({
   luggageDimensions,
   packingResult,
   units,
+  onOpenSuggestions,
 }) => {
   const {
     totalLuggageVolume,
@@ -204,6 +206,24 @@ export const WastedSpaceAudit: React.FC<WastedSpaceAuditProps> = ({
                 Near-perfect tight fit! No large contiguous empty voids detected.
               </span>
             </div>
+          )}
+
+          {wastedVolume > 1000 && onOpenSuggestions && (
+            <button
+              type="button"
+              onClick={onOpenSuggestions}
+              className="w-full mt-1 p-2.5 rounded-lg border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-900 transition-colors flex items-center justify-between text-xs cursor-pointer"
+            >
+              <div className="flex items-center space-x-2">
+                <ShoppingBag className="w-3.5 h-3.5 text-purple-600" />
+                <span className="font-semibold">
+                  Want to minimize this wasted space?
+                </span>
+              </div>
+              <span className="text-[11px] font-bold text-purple-700 underline">
+                See Suggested Cube Sizes to Buy →
+              </span>
+            </button>
           )}
         </div>
       </div>

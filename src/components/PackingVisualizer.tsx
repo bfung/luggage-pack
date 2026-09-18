@@ -12,6 +12,7 @@ interface PackingVisualizerProps {
   packingResult: PackingResult;
   units: UnitSystem;
   onRecalculate?: () => void;
+  onOpenSuggestions?: () => void;
 }
 
 export const PackingVisualizer: React.FC<PackingVisualizerProps> = ({
@@ -20,6 +21,7 @@ export const PackingVisualizer: React.FC<PackingVisualizerProps> = ({
   packingResult,
   units,
   onRecalculate,
+  onOpenSuggestions,
 }) => {
   const [activeTab, setActiveTab] = useState<'2d' | '3d' | 'audit'>('2d');
 
@@ -155,6 +157,7 @@ export const PackingVisualizer: React.FC<PackingVisualizerProps> = ({
           luggageDimensions={luggage.dimensions}
           packingResult={packingResult}
           units={units}
+          onOpenSuggestions={onOpenSuggestions}
         />
       )}
 

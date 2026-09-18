@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { PackingCubeItem, UnitSystem, Dimensions } from '../types';
 import { fromBase, toBase, formatDimensions, computeVolumeLiters } from '../utils/units';
-import { Layers, Plus, Trash2, Edit3, Check, X, Minus, Sparkles } from 'lucide-react';
+import { Layers, Plus, Trash2, Edit3, Check, X, Minus, Sparkles, ShoppingBag } from 'lucide-react';
 
 interface CubeManagerProps {
   units: UnitSystem;
@@ -11,6 +11,7 @@ interface CubeManagerProps {
   onDeleteCube: (id: string) => void;
   onUpdateQuantity: (id: string, newQty: number) => void;
   onPackSamplePreset: () => void;
+  onOpenSuggestions?: () => void;
 }
 
 const PRESET_COLORS = [
@@ -42,6 +43,7 @@ export const CubeManager: React.FC<CubeManagerProps> = ({
   onDeleteCube,
   onUpdateQuantity,
   onPackSamplePreset,
+  onOpenSuggestions,
 }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -414,6 +416,30 @@ export const CubeManager: React.FC<CubeManagerProps> = ({
             );
           })}
         </div>
+
+        {/* Suggestion Callout CTA */}
+        {onOpenSuggestions && (
+          <button
+            type="button"
+            onClick={onOpenSuggestions}
+            className="w-full mt-2 p-3 rounded-xl border border-purple-200 bg-purple-50/60 hover:bg-purple-100/60 text-purple-900 transition-colors flex items-center justify-between text-xs group text-left cursor-pointer"
+          >
+            <div className="flex items-center space-x-2.5">
+              <div className="p-1.5 rounded-lg bg-purple-200/70 text-purple-800">
+                <ShoppingBag className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-bold block">Suggest Cube Sizes to Buy</span>
+                <span className="text-[11px] text-purple-700">
+                  Target & minimize remaining luggage void space
+                </span>
+              </div>
+            </div>
+            <span className="text-[11px] font-semibold text-purple-700 group-hover:translate-x-0.5 transition-transform">
+              View Suggestions →
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );

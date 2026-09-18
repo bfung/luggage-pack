@@ -55,6 +55,22 @@ export interface WastedSpacePocket {
   description: string;
 }
 
+export interface SuggestedCubeRecommendation {
+  id: string;
+  name: string;
+  dimensions: Dimensions; // in base cm
+  category: 'clothing' | 'toiletries' | 'tech' | 'shoes' | 'accessories' | 'other';
+  color: string;
+  volumeLiters: number;
+  reason: string;
+  targetArea: 'headroom' | 'side-margin' | 'corner-void' | 'modular-gap' | 'all-purpose';
+  projectedEfficiencyGain: number; // e.g. +12.4%
+  recoveredVolumeLiters: number; // e.g. 3.2 L
+  idealFitScore: number; // 0 to 100 match score
+  suggestedQuantity: number;
+  fitsWithExisting: boolean;
+}
+
 export interface PackingResult {
   placedCubes: PlacedCube[];
   unplacedCubes: {

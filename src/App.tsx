@@ -53,6 +53,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLuggage, appState.cubesList, appState.allowRotation, calcNonce]);
 
+  // Track placed count per cube ID for instant visual feedback on quantity changes
+  const placedCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    packingResult.placedCubes.forEach((p) => {
+      counts[p.cubeId] = (counts[p.cubeId] || 0) + 1;
+    });
+    return counts;
+  }, [packingResult.placedCubes]);
+
   // Handlers for Units & Settings
   const handleToggleUnits = (newUnits: UnitSystem) => {
     setAppState((prev) => ({ ...prev, units: newUnits }));
@@ -291,6 +300,7 @@ export default function App() {
               <CubeManager
                 units={appState.units}
                 cubesList={appState.cubesList}
+                placedCounts={placedCounts}
                 onAddCube={handleAddCube}
                 onUpdateCube={handleUpdateCube}
                 onDeleteCube={handleDeleteCube}

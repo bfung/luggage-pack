@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { PackingCubeItem, UnitSystem, Dimensions } from '../types';
 import { fromBase, toBase, formatDimensions, computeVolumeLiters } from '../utils/units';
-import { Layers, Plus, Trash2, Edit3, Check, X, Minus, Sparkles, ShoppingBag } from 'lucide-react';
+import { Layers, Plus, Trash2, Edit3, Check, X, Minus, Sparkles, ShoppingBag, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 interface CubeManagerProps {
   units: UnitSystem;
   cubesList: PackingCubeItem[];
+  placedCounts?: Record<string, number>;
   onAddCube: (cube: PackingCubeItem) => void;
   onUpdateCube: (cube: PackingCubeItem) => void;
   onDeleteCube: (id: string) => void;
@@ -38,6 +39,7 @@ const CATEGORIES: PackingCubeItem['category'][] = [
 export const CubeManager: React.FC<CubeManagerProps> = ({
   units,
   cubesList,
+  placedCounts,
   onAddCube,
   onUpdateCube,
   onDeleteCube,
@@ -359,8 +361,23 @@ export const CubeManager: React.FC<CubeManagerProps> = ({
                         {cube.category}
                       </span>
                     </div>
-                    <div className="text-[11px] text-neutral-500 font-mono">
-                      {formatDimensions(cube.dimensions, units)} · {vol} L
+                    <div className="text-[11px] text-neutral-500 font-mono flex items-center space-x-2 flex-wrap">
+                      <span>{formatDimensions(cube.dimensions, units)} · {vol} L</span>
+                      {cube.quantity > 0 && placedCounts && (
+                        <span>
+                          {(placedCounts[cube.id] || 0) === cube.quantity ? (
+                            <span className="inline-flex items-center space-x-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
+                              <span>{(placedCounts[cube.id] || 0)} of {cube.quantity} packed</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center space-x-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                              <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                              <span>{(placedCounts[cube.id] || 0)} of {cube.quantity} packed</span>
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -54,7 +54,7 @@ export const DEFAULT_CUBES_PRESETS: PackingCubeItem[] = [
     dimensions: { length: 28, width: 18, height: 9 },
     color: '#10b981', // emerald
     category: 'clothing',
-    quantity: 2,
+    quantity: 1,
     allowRotation: true,
   },
   {
@@ -63,7 +63,7 @@ export const DEFAULT_CUBES_PRESETS: PackingCubeItem[] = [
     dimensions: { length: 22, width: 15, height: 8 },
     color: '#8b5cf6', // violet
     category: 'clothing',
-    quantity: 2,
+    quantity: 1,
     allowRotation: true,
   },
   {

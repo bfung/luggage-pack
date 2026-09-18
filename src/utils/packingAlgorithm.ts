@@ -39,29 +39,48 @@ function boxesOverlap(
 /**
  * Generates valid 3D rotations for a given packing cube
  */
-function getOrientations(dim: Dimensions, allowFullRotation: boolean): BoxOrientation[] {
+function getOrientations(dim: Dimensions, allowFullRotation: boolean, locked = false, preferTransposed = false): BoxOrientation[] {
   const { length: l, width: w, height: h } = dim;
+
+  if (locked) {
+    return [{ dx: l, dy: w, dz: h, name: 'Locked (0°)' }];
+  }
 
   if (!allowFullRotation) {
     // Only allow rotation on the XY plane (keep z as height)
+    const list: BoxOrientation[] = preferTransposed
+      ? [
+          { dx: w, dy: l, dz: h, name: 'Rotated (90°)' },
+          { dx: l, dy: w, dz: h, name: 'Normal (0°)' },
+        ]
+      : [
+          { dx: l, dy: w, dz: h, name: 'Normal (0°)' },
+          { dx: w, dy: l, dz: h, name: 'Rotated (90°)' },
+        ];
     const unique = new Map<string, BoxOrientation>();
-    const list: BoxOrientation[] = [
-      { dx: l, dy: w, dz: h, name: 'Normal (0°)' },
-      { dx: w, dy: l, dz: h, name: 'Rotated (90°)' },
-    ];
     list.forEach(o => unique.set(`${o.dx}x${o.dy}x${o.dz}`, o));
     return Array.from(unique.values());
   }
 
-  // All 6 orthogonal permutations
-  const perms: BoxOrientation[] = [
-    { dx: l, dy: w, dz: h, name: 'Flat (L×W×H)' },
-    { dx: l, dy: h, dz: w, name: 'On Side (L×H×W)' },
-    { dx: w, dy: l, dz: h, name: 'Flat Rotated (W×L×H)' },
-    { dx: w, dy: h, dz: l, name: 'On Edge (W×H×L)' },
-    { dx: h, dy: l, dz: w, name: 'Upright (H×L×W)' },
-    { dx: h, dy: w, dz: l, name: 'Upright Rotated (H×W×L)' },
-  ];
+  // Orthogonal permutations: prefer flat orientations (Flat and Flat Rotated)
+  // before considering standing on edge or upright
+  const perms: BoxOrientation[] = preferTransposed
+    ? [
+        { dx: w, dy: l, dz: h, name: 'Flat Rotated (W×L×H)' },
+        { dx: l, dy: w, dz: h, name: 'Flat (L×W×H)' },
+        { dx: w, dy: h, dz: l, name: 'On Edge (W×H×L)' },
+        { dx: l, dy: h, dz: w, name: 'On Side (L×H×W)' },
+        { dx: h, dy: l, dz: w, name: 'Upright (H×L×W)' },
+        { dx: h, dy: w, dz: l, name: 'Upright Rotated (H×W×L)' },
+      ]
+    : [
+        { dx: l, dy: w, dz: h, name: 'Flat (L×W×H)' },
+        { dx: w, dy: l, dz: h, name: 'Flat Rotated (W×L×H)' },
+        { dx: l, dy: h, dz: w, name: 'On Side (L×H×W)' },
+        { dx: w, dy: h, dz: l, name: 'On Edge (W×H×L)' },
+        { dx: h, dy: l, dz: w, name: 'Upright (H×L×W)' },
+        { dx: h, dy: w, dz: l, name: 'Upright Rotated (H×W×L)' },
+      ];
 
   const unique = new Map<string, BoxOrientation>();
   perms.forEach(o => {
@@ -82,15 +101,18 @@ function calculateContactScore(
 ): number {
   let contactArea = 0;
 
-  // Contact with container walls
+  // Base contact with luggage floor (highest priority for physical stability)
+  if (Math.abs(pt.z) < 0.001) contactArea += ori.dx * ori.dy * 1.5;
+
+  // Contact with luggage boundary walls
   if (Math.abs(pt.x) < 0.001) contactArea += ori.dy * ori.dz;
   if (Math.abs(pt.x + ori.dx - luggage.length) < 0.001) contactArea += ori.dy * ori.dz;
 
   if (Math.abs(pt.y) < 0.001) contactArea += ori.dx * ori.dz;
   if (Math.abs(pt.y + ori.dy - luggage.width) < 0.001) contactArea += ori.dx * ori.dz;
 
-  if (Math.abs(pt.z) < 0.001) contactArea += ori.dx * ori.dy;
-  if (Math.abs(pt.z + ori.dz - luggage.height) < 0.001) contactArea += ori.dx * ori.dy;
+  // Ceiling contact is minor boundary alignment (do not artificially favor premature lid stacking)
+  if (Math.abs(pt.z + ori.dz - luggage.height) < 0.001) contactArea += (ori.dx * ori.dy) * 0.1;
 
   // Contact with other placed boxes
   for (const b of placed) {
@@ -106,11 +128,11 @@ function calculateContactScore(
       const zOverlap = Math.max(0, Math.min(pt.z + ori.dz, b.z + b.placedHeight) - Math.max(pt.z, b.z));
       contactArea += xOverlap * zOverlap;
     }
-    // Check Z touch (stacking)
-    if (Math.abs(pt.z - (b.z + b.placedHeight)) < 0.001 || Math.abs(pt.z + ori.dz - b.z) < 0.001) {
+    // Check Z touch (stacking support from box underneath)
+    if (Math.abs(pt.z - (b.z + b.placedHeight)) < 0.001) {
       const xOverlap = Math.max(0, Math.min(pt.x + ori.dx, b.x + b.placedLength) - Math.max(pt.x, b.x));
       const yOverlap = Math.max(0, Math.min(pt.y + ori.dy, b.y + b.placedWidth) - Math.max(pt.y, b.y));
-      contactArea += xOverlap * yOverlap;
+      contactArea += xOverlap * yOverlap * 1.2;
     }
   }
 
@@ -207,14 +229,28 @@ interface ExpandedItem {
 function runPackingPass(
   items: ExpandedItem[],
   luggage: Dimensions,
-  allowFullRotation: boolean
+  allowGlobalRotation: boolean,
+  options: {
+    preferTransposed?: boolean;
+    flatOnly?: boolean;
+    floorPriority?: boolean;
+  } = {}
 ): { placed: PlacedCube[]; unplaced: ExpandedItem[] } {
   const placed: PlacedCube[] = [];
   const unplaced: ExpandedItem[] = [];
 
+  const { preferTransposed = false, flatOnly = false, floorPriority = true } = options;
+
   for (const item of items) {
     const candidatePoints = generateExtremePoints(placed, luggage);
-    const orientations = getOrientations(item.cube.dimensions, allowFullRotation);
+    
+    // Check item-level rotation setting
+    const cubeCanRotate = item.cube.allowRotation ?? true;
+    const canRotate = cubeCanRotate && allowGlobalRotation;
+    const allowFull = canRotate && !flatOnly;
+    const isLocked = !cubeCanRotate;
+
+    const orientations = getOrientations(item.cube.dimensions, allowFull, isLocked, preferTransposed);
 
     let bestPlacement: CandidatePlacement | null = null;
 
@@ -232,18 +268,19 @@ function runPackingPass(
         if (collides) continue;
 
         // 3. Support & stability check:
-        // Either sitting on the luggage floor (z=0) or resting on at least one box beneath
+        // Either sitting on the luggage floor (z=0) or resting on boxes beneath
         if (pt.z > 0.001) {
-          const supported = placed.some(b => {
-            const zMatches = Math.abs((b.z + b.placedHeight) - pt.z) < 0.001;
-            if (!zMatches) return false;
-            // Check XY footprint intersection
-            const xOvr = Math.max(0, Math.min(pt.x + ori.dx, b.x + b.placedLength) - Math.max(pt.x, b.x));
-            const yOvr = Math.max(0, Math.min(pt.y + ori.dy, b.y + b.placedWidth) - Math.max(pt.y, b.y));
-            return (xOvr * yOvr) > 0.05 * (ori.dx * ori.dy);
-          });
-          if (!supported) {
-            // Penalize unsupported in-air floating
+          let totalSupportArea = 0;
+          for (const b of placed) {
+            if (Math.abs((b.z + b.placedHeight) - pt.z) < 0.001) {
+              const xOvr = Math.max(0, Math.min(pt.x + ori.dx, b.x + b.placedLength) - Math.max(pt.x, b.x));
+              const yOvr = Math.max(0, Math.min(pt.y + ori.dy, b.y + b.placedWidth) - Math.max(pt.y, b.y));
+              totalSupportArea += (xOvr * yOvr);
+            }
+          }
+          const footprint = ori.dx * ori.dy;
+          if (totalSupportArea < 0.20 * footprint) {
+            // Must have at least 20% footprint support across bottom boxes
             continue;
           }
         }
@@ -251,10 +288,25 @@ function runPackingPass(
         // Contact score
         const contactScore = calculateContactScore(pt, ori, luggage, placed);
 
-        // Position score: prefer lower z heavily, then y, then x, plus contact area bonus
-        // Minimizing z keeps layers compact
-        const positionPenalty = (pt.z * 1000) + (pt.y * 10) + (pt.x * 1);
-        const totalScore = contactScore * 20 - positionPenalty;
+        // Floor bonus: strongly favor filling the floor before building tall stacks
+        const floorBonus = Math.abs(pt.z) < 0.001 ? (floorPriority ? 30000 : 15000) : 0;
+
+        // Residual space evaluation:
+        // Placing a box should avoid leaving tiny unusable slivers (< 6cm) on the floor
+        let residualBonus = 0;
+        const remX = luggage.length - (pt.x + ori.dx);
+        const remY = luggage.width - (pt.y + ori.dy);
+        if (Math.abs(pt.z) < 0.001) {
+          if (remX >= 15) residualBonus += 2500;
+          else if (remX > 0 && remX < 5) residualBonus -= 3000;
+
+          if (remY >= 15) residualBonus += 2500;
+          else if (remY > 0 && remY < 5) residualBonus -= 3000;
+        }
+
+        // Position score: prefer lower z heavily, then y, then x
+        const positionPenalty = (pt.z * (floorPriority ? 4000 : 2000)) + (pt.y * 12) + (pt.x * 2);
+        const totalScore = floorBonus + (contactScore * 18) + residualBonus - positionPenalty;
 
         if (!bestPlacement || totalScore > bestPlacement.score) {
           bestPlacement = {
@@ -468,6 +520,15 @@ export function calculateOptimalPacking(
       },
     },
     {
+      name: 'Grouped Identical Cubes',
+      sorter: (a, b) => {
+        if (a.cube.id === b.cube.id) return 0;
+        const vA = a.cube.dimensions.length * a.cube.dimensions.width * a.cube.dimensions.height;
+        const vB = b.cube.dimensions.length * b.cube.dimensions.width * b.cube.dimensions.height;
+        return vB - vA;
+      },
+    },
+    {
       name: 'Max Dimension Descending',
       sorter: (a, b) => {
         const maxA = Math.max(a.cube.dimensions.length, a.cube.dimensions.width, a.cube.dimensions.height);
@@ -494,20 +555,34 @@ export function calculateOptimalPacking(
   let bestResult: { placed: PlacedCube[]; unplaced: ExpandedItem[] } | null = null;
   let bestScore = -Infinity;
 
-  for (const heuristic of heuristics) {
-    const sortedList = [...expandedItems].sort(heuristic.sorter);
-    const result = runPackingPass(sortedList, luggageDimensions, allowGlobalRotation);
+  // Pass variants: try standard flat orientation, transposed flat orientation, and flat-only layers
+  const passConfigs: Array<{
+    preferTransposed: boolean;
+    flatOnly: boolean;
+    floorPriority: boolean;
+  }> = [
+    { preferTransposed: false, flatOnly: false, floorPriority: true },
+    { preferTransposed: true, flatOnly: false, floorPriority: true },
+    { preferTransposed: false, flatOnly: true, floorPriority: true },
+    { preferTransposed: true, flatOnly: true, floorPriority: true },
+  ];
 
-    // Score: strongly prioritize packing MORE items, then higher packed volume, then compact height
-    const packedCount = result.placed.length;
-    const packedVolume = result.placed.reduce((acc, b) => acc + b.volume, 0);
-    const maxZ = result.placed.reduce((acc, b) => Math.max(acc, b.z + b.placedHeight), 0);
+  for (const config of passConfigs) {
+    for (const heuristic of heuristics) {
+      const sortedList = [...expandedItems].sort(heuristic.sorter);
+      const result = runPackingPass(sortedList, luggageDimensions, allowGlobalRotation, config);
 
-    const score = (packedCount * 1_000_000) + packedVolume - (maxZ * 100);
+      // Score: strongly prioritize packing MORE items, then higher packed volume, then compact height
+      const packedCount = result.placed.length;
+      const packedVolume = result.placed.reduce((acc, b) => acc + b.volume, 0);
+      const maxZ = result.placed.reduce((acc, b) => Math.max(acc, b.z + b.placedHeight), 0);
 
-    if (score > bestScore) {
-      bestScore = score;
-      bestResult = result;
+      const score = (packedCount * 1_000_000) + packedVolume - (maxZ * 50);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestResult = result;
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "Luggage Packing Optimizer",
-  "description": "Calculate optimal 3D packing cube arrangements for luggage with interactive grid visualization, wasted space minimization, smart purchase recommendations, and local storage persistence.",
+  "description": "Calculate optimal 3D packing cube arrangements for luggage with interactive 3D isometric visualization, wasted space minimization, smart purchase recommendations, and local storage persistence.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

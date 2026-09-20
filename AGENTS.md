@@ -1,66 +1,37 @@
 # Agent Guidelines for Luggage Pack
 
-## Project Overview
-**Luggage Pack** is an interactive web application that calculates optimal 3D packing cube arrangements inside luggage. It features:
-- 3D isometric and layer-by-layer spatial packing visualization
-- Heuristic 3D bin-packing algorithm with orientation and rotation support
-- Wasted volume and modular gap minimization
-- Smart purchase recommendations for complementary packing cubes
-- Local storage persistence and import/export capabilities
+## Project overview
 
-## Tech Stack
-- **Framework**: React 19 (TypeScript)
-- **Build Tool**: Vite
-- **Styling**: Tailwind CSS v4 (`@tailwindcss/vite`)
-- **Icons**: `lucide-react`
-- **Animation**: `motion`
+Luggage Pack is a client-side React/TypeScript app for arranging packing cubes in luggage. It supports luggage and cube profiles, rotation-aware packing, 3D visualization, wasted-space analysis, purchase suggestions, local persistence, and JSON import/export.
 
-## Code Structure
-- `src/App.tsx`: Top-level application component and state coordinator.
-- `src/types.ts`: Core data structures (`Dimensions`, `LuggageProfile`, `PackingCubeItem`, `PackingResult`, etc.).
-- `src/components/`: Modular React components:
-  - `PackingVisualizer.tsx`: Isometric 3D rendering and layer breakdown visualization.
-  - `LuggageManager.tsx`: Luggage dimensions and profile configuration.
-  - `CubeManager.tsx`: Cube inventory and quantity management.
-  - `CubePurchaseSuggestions.tsx`: Commercial cube size recommendations.
-  - `Header.tsx`: Navigation, units switch, import/export controls.
-- `src/utils/`:
-  - `packingAlgorithm.ts`: 3D packing calculation logic.
-  - `units.ts`: Imperial / metric conversions and volume calculations.
-  - `storage.ts`: `localStorage` persistence and serialization.
-  - `presets.ts`: Default luggage and cube presets.
-  - `suggestionEngine.ts`: Logic matching voids/margins to commercially available cube sizes.
+## Development workflow
 
-## Development Commands
 ```bash
-# Install dependencies
 npm install
-
-# Start Vite dev server on port 3000
-npm run dev
-
-# Run TypeScript type check
-npm run lint
-
-# Create production build in dist/
-npm run build
-
-# Preview production build locally
-npm run preview
-
-# Clean build artifacts
-npm run clean
+npm run dev       # http://localhost:3000
+npm run lint      # TypeScript check
+npm run build     # Production build
+npm run preview   # Preview dist/
 ```
 
-## Architectural Conventions & Rules
-1. **Zero External AI Requirement at Runtime**:
-   - The core packing algorithms and recommendation engine are implemented in pure client-side TypeScript (`packingAlgorithm.ts` and `suggestionEngine.ts`). Do not add external LLM dependencies unless explicitly requested by the user.
-2. **Deterministic & Pure Geometry**:
-   - Keep packing calculations fast and free of side effects.
-   - All spatial calculations assume dimensions in centimeters (`cm`) and liters (`L`) internally as the canonical base unit.
-3. **State Management**:
-   - State is centralized in `App.tsx` and mirrored to `localStorage`.
-   - When modifying data models, ensure backwards-compatible defaults in `src/utils/storage.ts`.
-4. **Styling**:
-   - Use Tailwind utility classes.
-   - Maintain clean visual hierarchy, responsive layouts, and accessible contrast.
+On the maintainer’s laptop, run commands through `mise exec -- ...` because the system Node installation has a missing library dependency. In every other development environment, use whatever working Node/package-manager tooling that environment provides; do not assume `mise` is installed or required.
+
+Before handing off a change, run the type check and production build. For packing-clearance changes, also run `npx tsx scratch/test_thickness.ts`.
+
+Keep README.md updates concise and focused on actionable information for end users; avoid implementation details.
+
+## Product conventions
+
+- Keep user-entered cube dimensions unchanged in forms, inventory, manifests, and displayed measurements.
+- Geometry uses centimeters internally; convert only at input/output boundaries.
+- Fabric thickness is a placement allowance, not a mutation of nominal dimensions. The default is `0.024` cm for 70D ripstop nylon, with selectable alternatives in Settings.
+- Preserve backwards-compatible defaults when loading older local-storage or imported JSON data.
+- Keep packing and recommendation calculations deterministic, client-side, and free of external AI/runtime services unless explicitly requested.
+- Keep state coordination in `src/App.tsx`, shared models in `src/types.ts`, and use Tailwind utilities for styling with accessible contrast.
+
+## Session summary (September 2026)
+
+- Added persisted fabric-thickness state with backwards-compatible storage/import defaults and Settings choices for common materials.
+- Updated packing, collision, support, wasted-space, and recommendation calculations to account for effective fabric-inclusive footprints while retaining nominal dimensions.
+- Enhanced the 3D visualizer with thickness display modes, hover details, and repaired the interrupted JSX/yaw-aware face rendering.
+- Added and verified the 6-inch/3-inch regression scenario in `scratch/test_thickness.ts`.

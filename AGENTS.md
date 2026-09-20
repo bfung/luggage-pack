@@ -35,3 +35,22 @@ Keep README.md updates concise and focused on actionable information for end use
 - Updated packing, collision, support, wasted-space, and recommendation calculations to account for effective fabric-inclusive footprints while retaining nominal dimensions.
 - Enhanced the 3D visualizer with thickness display modes, hover details, and repaired the interrupted JSX/yaw-aware face rendering.
 - Added and verified the 6-inch/3-inch regression scenario in `scratch/test_thickness.ts`.
+
+## AI Studio Environment Requirements
+
+The following configurations and files are specifically required for the Google AI Studio cloud development and preview environment:
+
+- **`vite.config.ts` (`server` & `preview` settings)**:
+  - `server.host = '0.0.0.0'` and `server.port = 3000`: AI Studio's reverse proxy exclusively routes external traffic to container port 3000.
+  - `server.allowedHosts = true` (and in `preview`): Vite 6+ blocks incoming requests from non-localhost hostnames by default. Setting `allowedHosts: true` allows requests from AI Studio's Cloud Run domains (`*.run.app`) to avoid HTTP 403 Forbidden errors.
+  - `server.hmr` and `server.watch`: Checked against `DISABLE_HMR` (`process.env.DISABLE_HMR !== 'true'`) to disable file-watching and HMR during automated agent editing turns, preventing UI flickering and high CPU usage.
+- **`metadata.json`**:
+  - AI Studio platform configuration file storing application title, description, frame permissions, and major capabilities (`MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API`). Required by the AI Studio workspace and deployment pipeline.
+- **`.env.example`**:
+  - Documents platform-injected environment variables like `GEMINI_API_KEY` and `APP_URL` injected by AI Studio.
+- **`public/assets/aistudio/`**:
+  - Workspace directory and `.gitignore` reserved for assets and artifacts generated within AI Studio.
+- **SPA Deployment model**:
+  - AI Studio automatically serves static files from `dist/` for client-side SPAs. A separate `start` script in `package.json` is omitted intentionally so the platform's static file server handles production preview and deployment.
+- **Package tooling**:
+  - AI Studio runs on Linux Node 22 with standard `npm`. Local development tools like `mise.toml`, `.nvmrc`, `.node-version`, and `bun.lock` are kept for maintainers working outside AI Studio, but within AI Studio, `npm` is used.

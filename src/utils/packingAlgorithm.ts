@@ -1,4 +1,5 @@
 import { Dimensions, LuggageProfile, PackingCubeItem, PlacedCube, PackingResult, WastedSpacePocket } from '../types';
+import { DEFAULT_FABRIC_THICKNESS } from './storage';
 
 interface Point3D {
   x: number;
@@ -89,49 +90,59 @@ function getOrientations(dim: Dimensions, allowFullRotation: boolean, locked = f
   return Array.from(unique.values());
 }
 
+interface PlacedItemRecord {
+  cube: PlacedCube;
+  effX: number;
+  effY: number;
+  effZ: number;
+  effDx: number;
+  effDy: number;
+  effDz: number;
+}
+
 /**
  * Calculates contact area of candidate with luggage walls and already placed boxes.
  * Maximizing contact area produces tighter, more realistic packing with less fragmented voids.
  */
 function calculateContactScore(
   pt: Point3D,
-  ori: BoxOrientation,
+  effOri: { dx: number; dy: number; dz: number },
   luggage: Dimensions,
-  placed: PlacedCube[]
+  placedRecords: PlacedItemRecord[]
 ): number {
   let contactArea = 0;
 
   // Base contact with luggage floor (highest priority for physical stability)
-  if (Math.abs(pt.z) < 0.001) contactArea += ori.dx * ori.dy * 1.5;
+  if (Math.abs(pt.z) < 0.001) contactArea += effOri.dx * effOri.dy * 1.5;
 
   // Contact with luggage boundary walls
-  if (Math.abs(pt.x) < 0.001) contactArea += ori.dy * ori.dz;
-  if (Math.abs(pt.x + ori.dx - luggage.length) < 0.001) contactArea += ori.dy * ori.dz;
+  if (Math.abs(pt.x) < 0.001) contactArea += effOri.dy * effOri.dz;
+  if (Math.abs(pt.x + effOri.dx - luggage.length) < 0.001) contactArea += effOri.dy * effOri.dz;
 
-  if (Math.abs(pt.y) < 0.001) contactArea += ori.dx * ori.dz;
-  if (Math.abs(pt.y + ori.dy - luggage.width) < 0.001) contactArea += ori.dx * ori.dz;
+  if (Math.abs(pt.y) < 0.001) contactArea += effOri.dx * effOri.dz;
+  if (Math.abs(pt.y + effOri.dy - luggage.width) < 0.001) contactArea += effOri.dx * effOri.dz;
 
   // Ceiling contact is minor boundary alignment (do not artificially favor premature lid stacking)
-  if (Math.abs(pt.z + ori.dz - luggage.height) < 0.001) contactArea += (ori.dx * ori.dy) * 0.1;
+  if (Math.abs(pt.z + effOri.dz - luggage.height) < 0.001) contactArea += (effOri.dx * effOri.dy) * 0.1;
 
-  // Contact with other placed boxes
-  for (const b of placed) {
+  // Contact with other placed boxes (effective bounds)
+  for (const b of placedRecords) {
     // Check X touch
-    if (Math.abs(pt.x + ori.dx - b.x) < 0.001 || Math.abs(b.x + b.placedLength - pt.x) < 0.001) {
-      const yOverlap = Math.max(0, Math.min(pt.y + ori.dy, b.y + b.placedWidth) - Math.max(pt.y, b.y));
-      const zOverlap = Math.max(0, Math.min(pt.z + ori.dz, b.z + b.placedHeight) - Math.max(pt.z, b.z));
+    if (Math.abs(pt.x + effOri.dx - b.effX) < 0.001 || Math.abs(b.effX + b.effDx - pt.x) < 0.001) {
+      const yOverlap = Math.max(0, Math.min(pt.y + effOri.dy, b.effY + b.effDy) - Math.max(pt.y, b.effY));
+      const zOverlap = Math.max(0, Math.min(pt.z + effOri.dz, b.effZ + b.effDz) - Math.max(pt.z, b.effZ));
       contactArea += yOverlap * zOverlap;
     }
     // Check Y touch
-    if (Math.abs(pt.y + ori.dy - b.y) < 0.001 || Math.abs(b.y + b.placedWidth - pt.y) < 0.001) {
-      const xOverlap = Math.max(0, Math.min(pt.x + ori.dx, b.x + b.placedLength) - Math.max(pt.x, b.x));
-      const zOverlap = Math.max(0, Math.min(pt.z + ori.dz, b.z + b.placedHeight) - Math.max(pt.z, b.z));
+    if (Math.abs(pt.y + effOri.dy - b.effY) < 0.001 || Math.abs(b.effY + b.effDy - pt.y) < 0.001) {
+      const xOverlap = Math.max(0, Math.min(pt.x + effOri.dx, b.effX + b.effDx) - Math.max(pt.x, b.effX));
+      const zOverlap = Math.max(0, Math.min(pt.z + effOri.dz, b.effZ + b.effDz) - Math.max(pt.z, b.effZ));
       contactArea += xOverlap * zOverlap;
     }
     // Check Z touch (stacking support from box underneath)
-    if (Math.abs(pt.z - (b.z + b.placedHeight)) < 0.001) {
-      const xOverlap = Math.max(0, Math.min(pt.x + ori.dx, b.x + b.placedLength) - Math.max(pt.x, b.x));
-      const yOverlap = Math.max(0, Math.min(pt.y + ori.dy, b.y + b.placedWidth) - Math.max(pt.y, b.y));
+    if (Math.abs(pt.z - (b.effZ + b.effDz)) < 0.001) {
+      const xOverlap = Math.max(0, Math.min(pt.x + effOri.dx, b.effX + b.effDx) - Math.max(pt.x, b.effX));
+      const yOverlap = Math.max(0, Math.min(pt.y + effOri.dy, b.effY + b.effDy) - Math.max(pt.y, b.effY));
       contactArea += xOverlap * yOverlap * 1.2;
     }
   }
@@ -140,53 +151,53 @@ function calculateContactScore(
 }
 
 /**
- * Evaluates candidate points using Extreme Points (EP) algorithm
+ * Evaluates candidate points using Extreme Points (EP) algorithm based on effective footprints
  */
-function generateExtremePoints(placed: PlacedCube[], luggage: Dimensions): Point3D[] {
-  if (placed.length === 0) {
+function generateExtremePoints(placedRecords: PlacedItemRecord[], luggage: Dimensions): Point3D[] {
+  if (placedRecords.length === 0) {
     return [{ x: 0, y: 0, z: 0 }];
   }
 
   const rawPoints: Point3D[] = [{ x: 0, y: 0, z: 0 }];
 
-  for (const b of placed) {
+  for (const b of placedRecords) {
     // Primary 3 projection points
-    rawPoints.push({ x: b.x + b.placedLength, y: b.y, z: b.z });
-    rawPoints.push({ x: b.x, y: b.y + b.placedWidth, z: b.z });
-    rawPoints.push({ x: b.x, y: b.y, z: b.z + b.placedHeight });
+    rawPoints.push({ x: b.effX + b.effDx, y: b.effY, z: b.effZ });
+    rawPoints.push({ x: b.effX, y: b.effY + b.effDy, z: b.effZ });
+    rawPoints.push({ x: b.effX, y: b.effY, z: b.effZ + b.effDz });
 
     // Edge combination points
-    rawPoints.push({ x: b.x + b.placedLength, y: b.y + b.placedWidth, z: b.z });
-    rawPoints.push({ x: b.x + b.placedLength, y: b.y, z: b.z + b.placedHeight });
-    rawPoints.push({ x: b.x, y: b.y + b.placedWidth, z: b.z + b.placedHeight });
+    rawPoints.push({ x: b.effX + b.effDx, y: b.effY + b.effDy, z: b.effZ });
+    rawPoints.push({ x: b.effX + b.effDx, y: b.effY, z: b.effZ + b.effDz });
+    rawPoints.push({ x: b.effX, y: b.effY + b.effDy, z: b.effZ + b.effDz });
 
     // Wall intersection projections
-    for (const other of placed) {
-      if (other.instanceId === b.instanceId) continue;
+    for (const other of placedRecords) {
+      if (other.cube.instanceId === b.cube.instanceId) continue;
       // Along X
-      if (b.x + b.placedLength <= other.x) {
-        rawPoints.push({ x: b.x + b.placedLength, y: other.y, z: other.z });
+      if (b.effX + b.effDx <= other.effX) {
+        rawPoints.push({ x: b.effX + b.effDx, y: other.effY, z: other.effZ });
       }
       // Along Y
-      if (b.y + b.placedWidth <= other.y) {
-        rawPoints.push({ x: other.x, y: b.y + b.placedWidth, z: other.z });
+      if (b.effY + b.effDy <= other.effY) {
+        rawPoints.push({ x: other.effX, y: b.effY + b.effDy, z: other.effZ });
       }
       // Along Z
-      if (b.z + b.placedHeight <= other.z) {
-        rawPoints.push({ x: other.x, y: other.y, z: b.z + b.placedHeight });
+      if (b.effZ + b.effDz <= other.effZ) {
+        rawPoints.push({ x: other.effX, y: other.effY, z: b.effZ + b.effDz });
       }
     }
   }
 
-  // Filter valid points: must be within luggage dimensions and not inside another placed box
+  // Filter valid points: must be within luggage dimensions and not inside another placed box's effective bounds
   const validPoints: Point3D[] = [];
   const seen = new Set<string>();
 
   for (const pt of rawPoints) {
-    // Round to 2 decimal places to avoid floating point duplication
-    const rx = Math.round(pt.x * 100) / 100;
-    const ry = Math.round(pt.y * 100) / 100;
-    const rz = Math.round(pt.z * 100) / 100;
+    // Round to 3 decimal places to avoid floating point duplication
+    const rx = Math.round(pt.x * 1000) / 1000;
+    const ry = Math.round(pt.y * 1000) / 1000;
+    const rz = Math.round(pt.z * 1000) / 1000;
 
     if (rx < 0 || rx >= luggage.length) continue;
     if (ry < 0 || ry >= luggage.width) continue;
@@ -196,11 +207,11 @@ function generateExtremePoints(placed: PlacedCube[], luggage: Dimensions): Point
     if (seen.has(key)) continue;
     seen.add(key);
 
-    // Ensure the point itself is not strictly inside any placed box
-    const insideAny = placed.some(b => 
-      rx >= b.x && rx < b.x + b.placedLength - 0.001 &&
-      ry >= b.y && ry < b.y + b.placedWidth - 0.001 &&
-      rz >= b.z && rz < b.z + b.placedHeight - 0.001
+    // Ensure the point itself is not strictly inside any placed box's effective bounds
+    const insideAny = placedRecords.some(b =>
+      rx >= b.effX && rx < b.effX + b.effDx - 0.001 &&
+      ry >= b.effY && ry < b.effY + b.effDy - 0.001 &&
+      rz >= b.effZ && rz < b.effZ + b.effDz - 0.001
     );
 
     if (!insideAny) {
@@ -234,15 +245,17 @@ function runPackingPass(
     preferTransposed?: boolean;
     flatOnly?: boolean;
     floorPriority?: boolean;
-  } = {}
+  } = {},
+  fabricThickness: number = DEFAULT_FABRIC_THICKNESS
 ): { placed: PlacedCube[]; unplaced: ExpandedItem[] } {
   const placed: PlacedCube[] = [];
+  const placedRecords: PlacedItemRecord[] = [];
   const unplaced: ExpandedItem[] = [];
 
   const { preferTransposed = false, flatOnly = false, floorPriority = true } = options;
 
   for (const item of items) {
-    const candidatePoints = generateExtremePoints(placed, luggage);
+    const candidatePoints = generateExtremePoints(placedRecords, luggage);
     
     // Check item-level rotation setting
     const cubeCanRotate = item.cube.allowRotation ?? true;
@@ -253,17 +266,28 @@ function runPackingPass(
     const orientations = getOrientations(item.cube.dimensions, allowFull, isLocked, preferTransposed);
 
     let bestPlacement: CandidatePlacement | null = null;
+    let bestEffDimensions = { dx: 0, dy: 0, dz: 0 };
 
     for (const pt of candidatePoints) {
       for (const ori of orientations) {
-        // 1. Boundary check
-        if (pt.x + ori.dx > luggage.length + 0.001) continue;
-        if (pt.y + ori.dy > luggage.width + 0.001) continue;
-        if (pt.z + ori.dz > luggage.height + 0.001) continue;
+        // Effective dimensions incorporating real-world fabric thickness
+        const effDx = ori.dx + fabricThickness;
+        const effDy = ori.dy + fabricThickness;
+        const effDz = ori.dz + fabricThickness;
 
-        // 2. Overlap check
-        const collides = placed.some(b => 
-          boxesOverlap(pt, ori, { x: b.x, y: b.y, z: b.z }, { dx: b.placedLength, dy: b.placedWidth, dz: b.placedHeight })
+        // 1. Boundary check against luggage walls
+        if (pt.x + effDx > luggage.length + 0.001) continue;
+        if (pt.y + effDy > luggage.width + 0.001) continue;
+        if (pt.z + effDz > luggage.height + 0.001) continue;
+
+        // 2. Overlap check against effective bounds of already placed boxes
+        const collides = placedRecords.some(b =>
+          boxesOverlap(
+            pt,
+            { dx: effDx, dy: effDy, dz: effDz },
+            { x: b.effX, y: b.effY, z: b.effZ },
+            { dx: b.effDx, dy: b.effDy, dz: b.effDz }
+          )
         );
         if (collides) continue;
 
@@ -271,22 +295,22 @@ function runPackingPass(
         // Either sitting on the luggage floor (z=0) or resting on boxes beneath
         if (pt.z > 0.001) {
           let totalSupportArea = 0;
-          for (const b of placed) {
-            if (Math.abs((b.z + b.placedHeight) - pt.z) < 0.001) {
-              const xOvr = Math.max(0, Math.min(pt.x + ori.dx, b.x + b.placedLength) - Math.max(pt.x, b.x));
-              const yOvr = Math.max(0, Math.min(pt.y + ori.dy, b.y + b.placedWidth) - Math.max(pt.y, b.y));
+          for (const b of placedRecords) {
+            if (Math.abs((b.effZ + b.effDz) - pt.z) < 0.001) {
+              const xOvr = Math.max(0, Math.min(pt.x + effDx, b.effX + b.effDx) - Math.max(pt.x, b.effX));
+              const yOvr = Math.max(0, Math.min(pt.y + effDy, b.effY + b.effDy) - Math.max(pt.y, b.effY));
               totalSupportArea += (xOvr * yOvr);
             }
           }
-          const footprint = ori.dx * ori.dy;
+          const footprint = effDx * effDy;
           if (totalSupportArea < 0.20 * footprint) {
             // Must have at least 20% footprint support across bottom boxes
             continue;
           }
         }
 
-        // Contact score
-        const contactScore = calculateContactScore(pt, ori, luggage, placed);
+        // Contact score using effective dimensions
+        const contactScore = calculateContactScore(pt, { dx: effDx, dy: effDy, dz: effDz }, luggage, placedRecords);
 
         // Floor bonus: strongly favor filling the floor before building tall stacks
         const floorBonus = Math.abs(pt.z) < 0.001 ? (floorPriority ? 30000 : 15000) : 0;
@@ -294,8 +318,8 @@ function runPackingPass(
         // Residual space evaluation:
         // Placing a box should avoid leaving tiny unusable slivers (< 6cm) on the floor
         let residualBonus = 0;
-        const remX = luggage.length - (pt.x + ori.dx);
-        const remY = luggage.width - (pt.y + ori.dy);
+        const remX = luggage.length - (pt.x + effDx);
+        const remY = luggage.width - (pt.y + effDy);
         if (Math.abs(pt.z) < 0.001) {
           if (remX >= 15) residualBonus += 2500;
           else if (remX > 0 && remX < 5) residualBonus -= 3000;
@@ -314,26 +338,47 @@ function runPackingPass(
             orientation: ori,
             score: totalScore,
           };
+          bestEffDimensions = { dx: effDx, dy: effDy, dz: effDz };
         }
       }
     }
 
     if (bestPlacement) {
-      placed.push({
+      const halfT = fabricThickness / 2;
+      const placedCube: PlacedCube = {
         instanceId: item.instanceId,
         cubeId: item.cube.id,
         name: item.cube.name,
         color: item.cube.color,
         category: item.cube.category,
-        x: bestPlacement.point.x,
-        y: bestPlacement.point.y,
-        z: bestPlacement.point.z,
+        // Placement position in container coordinates (centered within effective slot)
+        x: bestPlacement.point.x + halfT,
+        y: bestPlacement.point.y + halfT,
+        z: bestPlacement.point.z + (bestPlacement.point.z > 0.001 ? halfT : 0),
+        // Dimensions as placed: EXACT user-specified dimensions (dx, dy, dz)
         placedLength: bestPlacement.orientation.dx,
         placedWidth: bestPlacement.orientation.dy,
         placedHeight: bestPlacement.orientation.dz,
         originalDimensions: item.cube.dimensions,
         volume: bestPlacement.orientation.dx * bestPlacement.orientation.dy * bestPlacement.orientation.dz,
         rotationName: bestPlacement.orientation.name,
+        fabricThickness,
+        effectiveDimensions: {
+          length: bestEffDimensions.dx,
+          width: bestEffDimensions.dy,
+          height: bestEffDimensions.dz,
+        },
+      };
+
+      placed.push(placedCube);
+      placedRecords.push({
+        cube: placedCube,
+        effX: bestPlacement.point.x,
+        effY: bestPlacement.point.y,
+        effZ: bestPlacement.point.z,
+        effDx: bestEffDimensions.dx,
+        effDy: bestEffDimensions.dy,
+        effDz: bestEffDimensions.dz,
       });
     } else {
       unplaced.push(item);
@@ -371,9 +416,10 @@ function analyzeWastedSpacePockets(
   let maxX = 0;
   let maxY = 0;
   for (const b of placed) {
-    maxZ = Math.max(maxZ, b.z + b.placedHeight);
-    maxX = Math.max(maxX, b.x + b.placedLength);
-    maxY = Math.max(maxY, b.y + b.placedWidth);
+    const halfT = (b.fabricThickness || 0) / 2;
+    maxZ = Math.max(maxZ, b.z + b.placedHeight + (b.z > 0.001 ? halfT : 0));
+    maxX = Math.max(maxX, b.x + b.placedLength + halfT);
+    maxY = Math.max(maxY, b.y + b.placedWidth + halfT);
   }
 
   const topGap = luggage.height - maxZ;
@@ -467,9 +513,13 @@ function calculateLayers(placed: PlacedCube[]): { zBottom: number; zTop: number;
 export function calculateOptimalPacking(
   luggage: LuggageProfile,
   cubes: PackingCubeItem[],
-  allowGlobalRotation = true
+  allowGlobalRotation = true,
+  fabricThickness: number = DEFAULT_FABRIC_THICKNESS
 ): PackingResult {
   const luggageDimensions = luggage.dimensions;
+  const normalizedFabricThickness = Number.isFinite(fabricThickness)
+    ? Math.max(0, fabricThickness)
+    : DEFAULT_FABRIC_THICKNESS;
   const totalLuggageVolume = luggageDimensions.length * luggageDimensions.width * luggageDimensions.height;
 
   // Flatten quantity into individual items
@@ -570,7 +620,7 @@ export function calculateOptimalPacking(
   for (const config of passConfigs) {
     for (const heuristic of heuristics) {
       const sortedList = [...expandedItems].sort(heuristic.sorter);
-      const result = runPackingPass(sortedList, luggageDimensions, allowGlobalRotation, config);
+      const result = runPackingPass(sortedList, luggageDimensions, allowGlobalRotation, config, normalizedFabricThickness);
 
       // Score: strongly prioritize packing MORE items, then higher packed volume, then compact height
       const packedCount = result.placed.length;

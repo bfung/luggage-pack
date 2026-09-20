@@ -47,11 +47,12 @@ export default function App() {
     return calculateOptimalPacking(
       activeLuggage,
       appState.cubesList,
-      appState.allowRotation
+      appState.allowRotation,
+      appState.fabricThickness
     );
     // calcNonce allows manual recalculate trigger
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeLuggage, appState.cubesList, appState.allowRotation, calcNonce]);
+  }, [activeLuggage, appState.cubesList, appState.allowRotation, appState.fabricThickness, calcNonce]);
 
   // Track placed count per cube ID for instant visual feedback on quantity changes
   const placedCounts = useMemo(() => {
@@ -69,6 +70,10 @@ export default function App() {
 
   const handleToggleRotation = (allow: boolean) => {
     setAppState((prev) => ({ ...prev, allowRotation: allow }));
+  };
+
+  const handleUpdateFabricThickness = (thickness: number) => {
+    setAppState((prev) => ({ ...prev, fabricThickness: thickness }));
   };
 
   const handleResetPresets = () => {
@@ -208,6 +213,8 @@ export default function App() {
         onToggleUnits={handleToggleUnits}
         allowRotation={appState.allowRotation}
         onToggleRotation={handleToggleRotation}
+        fabricThickness={appState.fabricThickness ?? 0.024}
+        onUpdateFabricThickness={handleUpdateFabricThickness}
         appState={appState}
         onResetPresets={handleResetPresets}
         onImportState={handleImportState}
@@ -338,6 +345,7 @@ export default function App() {
               cubes={appState.cubesList}
               packingResult={packingResult}
               allowRotation={appState.allowRotation}
+              fabricThickness={appState.fabricThickness}
               units={appState.units}
               onAddSuggestedCube={handleAddSuggestedCube}
               onAddBundle={handleAddBundle}

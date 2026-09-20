@@ -101,7 +101,8 @@ export function generateCubePurchaseSuggestions(
   luggage: LuggageProfile,
   existingCubes: PackingCubeItem[],
   currentResult: PackingResult,
-  allowRotation: boolean
+  allowRotation: boolean,
+  fabricThickness?: number
 ): SuggestedCubeRecommendation[] {
   const currentPackedCount = currentResult.placedCubes.length;
   const currentPackedVol = currentResult.totalPackedVolume;
@@ -118,9 +119,12 @@ export function generateCubePurchaseSuggestions(
   let maxX = 0;
   let maxY = 0;
   currentResult.placedCubes.forEach((b) => {
-    maxZ = Math.max(maxZ, b.z + b.placedHeight);
-    maxX = Math.max(maxX, b.x + b.placedLength);
-    maxY = Math.max(maxY, b.y + b.placedWidth);
+    // Packing positions refer to the nominal cube body. Its effective slot
+    // includes half of the fabric allowance beyond each upper edge.
+    const halfThickness = (b.fabricThickness ?? fabricThickness ?? 0.024) / 2;
+    maxZ = Math.max(maxZ, b.z + b.placedHeight + halfThickness);
+    maxX = Math.max(maxX, b.x + b.placedLength + halfThickness);
+    maxY = Math.max(maxY, b.y + b.placedWidth + halfThickness);
   });
 
   const topHeadroom = Math.max(0, luggage.dimensions.height - maxZ);
@@ -240,7 +244,7 @@ export function generateCubePurchaseSuggestions(
 
     // Simulate packing: existing cubes + 1 of this candidate
     const simulatedCubes = [...existingCubes, testItem];
-    const simResult = calculateOptimalPacking(luggage, simulatedCubes, allowRotation);
+    const simResult = calculateOptimalPacking(luggage, simulatedCubes, allowRotation, fabricThickness);
 
     // Check if the candidate was placed and didn't displace existing cubes
     const wasCandidatePlaced = simResult.placedCubes.some((b) => b.cubeId === testItem.id);

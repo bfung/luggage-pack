@@ -26,6 +26,7 @@ interface CubePurchaseSuggestionsProps {
   cubes: PackingCubeItem[];
   packingResult: PackingResult;
   allowRotation: boolean;
+  fabricThickness?: number;
   units: UnitSystem;
   onAddSuggestedCube: (cube: SuggestedCubeRecommendation) => void;
   onAddBundle: (cubes: SuggestedCubeRecommendation[]) => void;
@@ -36,6 +37,7 @@ export const CubePurchaseSuggestions: React.FC<CubePurchaseSuggestionsProps> = (
   cubes,
   packingResult,
   allowRotation,
+  fabricThickness,
   units,
   onAddSuggestedCube,
   onAddBundle,
@@ -45,8 +47,8 @@ export const CubePurchaseSuggestions: React.FC<CubePurchaseSuggestionsProps> = (
 
   // Generate recommendations based on current luggage, cubes, and result
   const recommendations = useMemo(() => {
-    return generateCubePurchaseSuggestions(luggage, cubes, packingResult, allowRotation);
-  }, [luggage, cubes, packingResult, allowRotation]);
+    return generateCubePurchaseSuggestions(luggage, cubes, packingResult, allowRotation, fabricThickness);
+  }, [luggage, cubes, packingResult, allowRotation, fabricThickness]);
 
   const filteredRecommendations = useMemo(() => {
     if (filterArea === 'all') return recommendations;

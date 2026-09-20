@@ -41,6 +41,8 @@ export interface PlacedCube {
   originalDimensions: Dimensions;
   volume: number;
   rotationName: string;
+  fabricThickness?: number;
+  effectiveDimensions?: Dimensions;
 }
 
 export interface WastedSpacePocket {
@@ -96,4 +98,5 @@ export interface AppState {
   luggageList: LuggageProfile[];
   cubesList: PackingCubeItem[];
   allowRotation: boolean;
+  fabricThickness?: number; // stored in base units (cm), e.g. 0.024 for 70D nylon ripstop
 }

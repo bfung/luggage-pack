@@ -3,12 +3,22 @@ import { DEFAULT_CUBES_PRESETS, DEFAULT_LUGGAGE_PRESETS } from './presets';
 
 const STORAGE_KEY = 'packoptima_user_state_v1';
 
+// Default fabric thickness for 70-denier (70D) nylon ripstop (2 opposing walls = 0.24 mm = 0.024 cm)
+export const DEFAULT_FABRIC_THICKNESS = 0.024;
+
+function readFabricThickness(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : DEFAULT_FABRIC_THICKNESS;
+}
+
 export const INITIAL_STATE: AppState = {
   units: 'cm',
   selectedLuggageId: DEFAULT_LUGGAGE_PRESETS[0].id,
   luggageList: DEFAULT_LUGGAGE_PRESETS,
   cubesList: DEFAULT_CUBES_PRESETS,
   allowRotation: true,
+  fabricThickness: DEFAULT_FABRIC_THICKNESS,
 };
 
 export function loadStoredState(): AppState {
@@ -25,6 +35,7 @@ export function loadStoredState(): AppState {
       luggageList: parsed.luggageList,
       cubesList: Array.isArray(parsed.cubesList) ? parsed.cubesList : DEFAULT_CUBES_PRESETS,
       allowRotation: parsed.allowRotation !== undefined ? parsed.allowRotation : true,
+      fabricThickness: readFabricThickness(parsed.fabricThickness),
     };
   } catch (err) {
     console.error('Failed to parse state from localStorage', err);
@@ -56,6 +67,7 @@ export function importStateFromJson(jsonString: string): AppState | null {
       luggageList: data.luggageList,
       cubesList: data.cubesList,
       allowRotation: data.allowRotation !== undefined ? data.allowRotation : true,
+      fabricThickness: readFabricThickness(data.fabricThickness),
     };
   } catch (e) {
     console.error('Import failed', e);

@@ -22,8 +22,15 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
   const [zoom, setZoom] = useState<number>(1.0);
   const [explode, setExplode] = useState<number>(0); // 0 to 40 cm lift
   const [showWastedVoid, setShowWastedVoid] = useState<boolean>(true);
+  const [thicknessDisplay, setThicknessDisplay] = useState<'enhanced' | 'true' | 'off'>('enhanced');
   const [hoveredCube, setHoveredCube] = useState<PlacedCube | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+
+  // Ref for hit regions during mouse hover
+  const hitRegionsRef = useRef<Array<{
+    cube: PlacedCube;
+    quads: Array<{ x2d: number; y2d: number }[]>;
+  }>>([]);
 
   // Drag tracking refs
   const dragStartRef = useRef<{
@@ -82,6 +89,39 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging]);
+
+  // Point in quad polygon helper for 3D face hover testing
+  const isPointInQuad = (px: number, py: number, quad: { x2d: number; y2d: number }[]): boolean => {
+    let inside = false;
+    for (let i = 0, j = quad.length - 1; i < quad.length; j = i++) {
+      const xi = quad[i].x2d;
+      const yi = quad[i].y2d;
+      const xj = quad[j].x2d;
+      const yj = quad[j].y2d;
+      const intersect = (yi > py !== yj > py) && (px < ((xj - xi) * (py - yi)) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isDragging) return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    const regions = hitRegionsRef.current;
+    let found: PlacedCube | null = null;
+    for (let i = regions.length - 1; i >= 0; i--) {
+      const r = regions[i];
+      if (r.quads.some((q) => isPointInQuad(mx, my, q))) {
+        found = r.cube;
+        break;
+      }
+    }
+    setHoveredCube(found);
+  };
 
   // Touch interaction handlers (single-finger rotate, two-finger pinch zoom)
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
@@ -166,6 +206,11 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
     // Angle radians
     const radYaw = (yaw * Math.PI) / 180;
     const radPitch = (pitch * Math.PI) / 180;
+
+    // Components of the viewing direction in the luggage's X/Y plane. They
+    // select the outward side faces that are visible at the current yaw.
+    const camX = Math.sin(radYaw);
+    const camY = Math.cos(radYaw);
 
     // Scale factor to fit inside canvas
     const maxDim = Math.max(luggageDimensions.length, luggageDimensions.width, luggageDimensions.height);
@@ -307,22 +352,21 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
     };
 
     // Render blocks
+    hitRegionsRef.current = [];
+
     blocks.forEach((block) => {
       const { x, y, z, dx, dy, dz, color, type } = block;
 
-      // 8 corners
-      const v000 = project(x, y, z);
-      const v100 = project(x + dx, y, z);
-      const v010 = project(x, y + dy, z);
-      const v110 = project(x + dx, y + dy, z);
-
-      const v001 = project(x, y, z + dz);
-      const v101 = project(x + dx, y, z + dz);
-      const v011 = project(x, y + dy, z + dz);
-      const v111 = project(x + dx, y + dy, z + dz);
-
       if (type === 'wasted') {
         // Draw translucent amber ghost box
+        const v001 = project(x, y, z + dz);
+        const v101 = project(x + dx, y, z + dz);
+        const v111 = project(x + dx, y + dy, z + dz);
+        const v011 = project(x, y + dy, z + dz);
+
+        const v100 = project(x + dx, y, z);
+        const v110 = project(x + dx, y + dy, z);
+
         ctx.save();
         ctx.fillStyle = 'rgba(245, 158, 11, 0.22)';
         ctx.strokeStyle = '#d97706';
@@ -353,54 +397,217 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
         return;
       }
 
-      // Normal Packing Cube
-      const topColor = adjustColor(color, 1.15); // bright top
-      const sideColor1 = adjustColor(color, 0.95);
-      const sideColor2 = adjustColor(color, 0.78);
+      // Normal Packing Cube: render real-world thickness in all 3 dimensions
+      const cube = block.cube;
+      const isHovered = hoveredCube?.instanceId === cube?.instanceId;
+      const rawT = cube?.fabricThickness ?? 0.024;
 
-      // 1. Top Face
+      let visualT = 0;
+      if (thicknessDisplay === 'enhanced') {
+        const minDim = Math.min(dx, dy, dz);
+        visualT = Math.max(rawT, Math.min(0.65, minDim * 0.1));
+      } else if (thicknessDisplay === 'true') {
+        visualT = rawT;
+      }
+
+      const halfTx = visualT / 2;
+      const halfTy = visualT / 2;
+      const halfTz = visualT / 2;
+
+      // Outer bounds (expanded by thickness in X, Y, Z)
+      const xOut0 = x - halfTx;
+      const xOut1 = x + dx + halfTx;
+      const yOut0 = y - halfTy;
+      const yOut1 = y + dy + halfTy;
+      const zOut0 = z - (z > 0.001 ? halfTz : 0);
+      const zOut1 = z + dz + halfTz;
+
+      // Inner bounds (exact user-specified dimensions)
+      const xIn0 = x;
+      const xIn1 = x + dx;
+      const yIn0 = y;
+      const yIn1 = y + dy;
+      const zIn0 = z;
+      const zIn1 = z + dz;
+
+      const topColor = adjustColor(color, 1.20);
+      const topCollarColor = adjustColor(color, 1.02);
+
+      const side1Color = adjustColor(color, 0.96);
+      const side1CollarColor = adjustColor(color, 0.82);
+
+      const side2Color = adjustColor(color, 0.78);
+      const side2CollarColor = adjustColor(color, 0.65);
+
+      const quadsForHit: Array<{ x2d: number; y2d: number }[]> = [];
+
+      // 1. Top Face (Z+) - Reveals wall thickness in X and Y
+      const tOut0 = project(xOut0, yOut0, zOut1);
+      const tOut1 = project(xOut1, yOut0, zOut1);
+      const tOut2 = project(xOut1, yOut1, zOut1);
+      const tOut3 = project(xOut0, yOut1, zOut1);
+
+      const tIn0 = project(xIn0, yIn0, zOut1);
+      const tIn1 = project(xIn1, yIn0, zOut1);
+      const tIn2 = project(xIn1, yIn1, zOut1);
+      const tIn3 = project(xIn0, yIn1, zOut1);
+
+      quadsForHit.push([tOut0, tOut1, tOut2, tOut3]);
+
+      // Draw Top Outer Shell Face
       ctx.beginPath();
-      ctx.moveTo(v001.x2d, v001.y2d);
-      ctx.lineTo(v101.x2d, v101.y2d);
-      ctx.lineTo(v111.x2d, v111.y2d);
-      ctx.lineTo(v011.x2d, v011.y2d);
+      ctx.moveTo(tOut0.x2d, tOut0.y2d);
+      ctx.lineTo(tOut1.x2d, tOut1.y2d);
+      ctx.lineTo(tOut2.x2d, tOut2.y2d);
+      ctx.lineTo(tOut3.x2d, tOut3.y2d);
       ctx.closePath();
-      ctx.fillStyle = topColor;
+      ctx.fillStyle = visualT > 0 ? topCollarColor : topColor;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = isHovered ? '#0284c7' : 'rgba(0, 0, 0, 0.25)';
+      ctx.lineWidth = isHovered ? 2 : 1;
       ctx.stroke();
 
-      // 2. Front X face (x+dx)
+      if (visualT > 0.001) {
+        // Draw Top Inner Core (showing thickness in X and Y)
+        ctx.beginPath();
+        ctx.moveTo(tIn0.x2d, tIn0.y2d);
+        ctx.lineTo(tIn1.x2d, tIn1.y2d);
+        ctx.lineTo(tIn2.x2d, tIn2.y2d);
+        ctx.lineTo(tIn3.x2d, tIn3.y2d);
+        ctx.closePath();
+        ctx.fillStyle = topColor;
+        ctx.fill();
+        ctx.strokeStyle = isHovered ? '#0284c7' : 'rgba(0, 0, 0, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Miter corner seams
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(tOut0.x2d, tOut0.y2d); ctx.lineTo(tIn0.x2d, tIn0.y2d);
+        ctx.moveTo(tOut1.x2d, tOut1.y2d); ctx.lineTo(tIn1.x2d, tIn1.y2d);
+        ctx.moveTo(tOut2.x2d, tOut2.y2d); ctx.lineTo(tIn2.x2d, tIn2.y2d);
+        ctx.moveTo(tOut3.x2d, tOut3.y2d); ctx.lineTo(tIn3.x2d, tIn3.y2d);
+        ctx.stroke();
+      }
+
+      // 2. Visible X Face - Reveals wall thickness in Y and Z
+      const isXPlus = camX >= 0;
+      const xFaceOut = isXPlus ? xOut1 : xOut0;
+      const xFaceIn = isXPlus ? xIn1 : xIn0;
+
+      const xOutA = project(xFaceOut, yOut0, zOut0);
+      const xOutB = project(xFaceOut, yOut1, zOut0);
+      const xOutC = project(xFaceOut, yOut1, zOut1);
+      const xOutD = project(xFaceOut, yOut0, zOut1);
+
+      const xInA = project(xFaceIn, yIn0, zIn0);
+      const xInB = project(xFaceIn, yIn1, zIn0);
+      const xInC = project(xFaceIn, yIn1, zIn1);
+      const xInD = project(xFaceIn, yIn0, zIn1);
+
+      quadsForHit.push([xOutA, xOutB, xOutC, xOutD]);
+
       ctx.beginPath();
-      ctx.moveTo(v100.x2d, v100.y2d);
-      ctx.lineTo(v110.x2d, v110.y2d);
-      ctx.lineTo(v111.x2d, v111.y2d);
-      ctx.lineTo(v101.x2d, v101.y2d);
+      ctx.moveTo(xOutA.x2d, xOutA.y2d);
+      ctx.lineTo(xOutB.x2d, xOutB.y2d);
+      ctx.lineTo(xOutC.x2d, xOutC.y2d);
+      ctx.lineTo(xOutD.x2d, xOutD.y2d);
       ctx.closePath();
-      ctx.fillStyle = sideColor1;
+      ctx.fillStyle = visualT > 0 ? side1CollarColor : side1Color;
       ctx.fill();
+      ctx.strokeStyle = isHovered ? '#0284c7' : 'rgba(0, 0, 0, 0.25)';
+      ctx.lineWidth = isHovered ? 2 : 1;
       ctx.stroke();
 
-      // 3. Front Y face (y+dy)
+      if (visualT > 0.001) {
+        ctx.beginPath();
+        ctx.moveTo(xInA.x2d, xInA.y2d);
+        ctx.lineTo(xInB.x2d, xInB.y2d);
+        ctx.lineTo(xInC.x2d, xInC.y2d);
+        ctx.lineTo(xInD.x2d, xInD.y2d);
+        ctx.closePath();
+        ctx.fillStyle = side1Color;
+        ctx.fill();
+        ctx.strokeStyle = isHovered ? '#0284c7' : 'rgba(0, 0, 0, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(xOutA.x2d, xOutA.y2d); ctx.lineTo(xInA.x2d, xInA.y2d);
+        ctx.moveTo(xOutB.x2d, xOutB.y2d); ctx.lineTo(xInB.x2d, xInB.y2d);
+        ctx.moveTo(xOutC.x2d, xOutC.y2d); ctx.lineTo(xInC.x2d, xInC.y2d);
+        ctx.moveTo(xOutD.x2d, xOutD.y2d); ctx.lineTo(xInD.x2d, xInD.y2d);
+        ctx.stroke();
+      }
+
+      // 3. Visible Y Face - Reveals wall thickness in X and Z
+      const isYPlus = camY >= 0;
+      const yFaceOut = isYPlus ? yOut1 : yOut0;
+      const yFaceIn = isYPlus ? yIn1 : yIn0;
+
+      const yOutA = project(xOut0, yFaceOut, zOut0);
+      const yOutB = project(xOut1, yFaceOut, zOut0);
+      const yOutC = project(xOut1, yFaceOut, zOut1);
+      const yOutD = project(xOut0, yFaceOut, zOut1);
+
+      const yInA = project(xIn0, yFaceIn, zIn0);
+      const yInB = project(xIn1, yFaceIn, zIn0);
+      const yInC = project(xIn1, yFaceIn, zIn1);
+      const yInD = project(xIn0, yFaceIn, zIn1);
+
+      quadsForHit.push([yOutA, yOutB, yOutC, yOutD]);
+
       ctx.beginPath();
-      ctx.moveTo(v010.x2d, v010.y2d);
-      ctx.lineTo(v110.x2d, v110.y2d);
-      ctx.lineTo(v111.x2d, v111.y2d);
-      ctx.lineTo(v011.x2d, v011.y2d);
+      ctx.moveTo(yOutA.x2d, yOutA.y2d);
+      ctx.lineTo(yOutB.x2d, yOutB.y2d);
+      ctx.lineTo(yOutC.x2d, yOutC.y2d);
+      ctx.lineTo(yOutD.x2d, yOutD.y2d);
       ctx.closePath();
-      ctx.fillStyle = sideColor2;
+      ctx.fillStyle = visualT > 0 ? side2CollarColor : side2Color;
       ctx.fill();
+      ctx.strokeStyle = isHovered ? '#0284c7' : 'rgba(0, 0, 0, 0.25)';
+      ctx.lineWidth = isHovered ? 2 : 1;
       ctx.stroke();
+
+      if (visualT > 0.001) {
+        ctx.beginPath();
+        ctx.moveTo(yInA.x2d, yInA.y2d);
+        ctx.lineTo(yInB.x2d, yInB.y2d);
+        ctx.lineTo(yInC.x2d, yInC.y2d);
+        ctx.lineTo(yInD.x2d, yInD.y2d);
+        ctx.closePath();
+        ctx.fillStyle = side2Color;
+        ctx.fill();
+        ctx.strokeStyle = isHovered ? '#0284c7' : 'rgba(0, 0, 0, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(yOutA.x2d, yOutA.y2d); ctx.lineTo(yInA.x2d, yInA.y2d);
+        ctx.moveTo(yOutB.x2d, yOutB.y2d); ctx.lineTo(yInB.x2d, yInB.y2d);
+        ctx.moveTo(yOutC.x2d, yOutC.y2d); ctx.lineTo(yInC.x2d, yInC.y2d);
+        ctx.moveTo(yOutD.x2d, yOutD.y2d); ctx.lineTo(yInD.x2d, yInD.y2d);
+        ctx.stroke();
+      }
 
       // Top label if block is large enough
-      if (block.cube && (v101.x2d - v001.x2d) > 25) {
+      if (cube && (tIn1.x2d - tIn0.x2d) > 20) {
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 10px sans-serif';
         ctx.textAlign = 'center';
-        const labelX = (v001.x2d + v101.x2d + v111.x2d + v011.x2d) / 4;
-        const labelY = (v001.y2d + v101.y2d + v111.y2d + v011.y2d) / 4;
-        ctx.fillText(block.cube.name.slice(0, 10), labelX, labelY);
+        const labelX = (tIn0.x2d + tIn1.x2d + tIn2.x2d + tIn3.x2d) / 4;
+        const labelY = (tIn0.y2d + tIn1.y2d + tIn2.y2d + tIn3.y2d) / 4;
+        ctx.fillText(cube.name.slice(0, 12), labelX, labelY);
+      }
+
+      if (cube) {
+        hitRegionsRef.current.push({ cube, quads: quadsForHit });
       }
     });
 
@@ -432,7 +639,7 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
     ctx.lineTo(p0WH.x2d, p0WH.y2d);
     ctx.closePath();
     ctx.stroke();
-  }, [luggageDimensions, placedCubes, yaw, pitch, zoom, explode, showWastedVoid, wastedPockets]);
+  }, [luggageDimensions, placedCubes, yaw, pitch, zoom, explode, showWastedVoid, wastedPockets, thicknessDisplay, hoveredCube]);
 
   return (
     <div className="space-y-3">
@@ -522,6 +729,52 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
             />
           </div>
 
+          {/* 3D Box Thickness View Mode */}
+          <div className="flex items-center space-x-1 border-l border-neutral-200 pl-3">
+            <span className="text-neutral-600 font-semibold flex items-center space-x-1">
+              <Layers className="w-3.5 h-3.5 text-sky-600" />
+              <span>3D Thickness:</span>
+            </span>
+            <div className="inline-flex rounded-lg p-0.5 bg-neutral-200/80 border border-neutral-300">
+              <button
+                type="button"
+                onClick={() => setThicknessDisplay('enhanced')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors ${
+                  thicknessDisplay === 'enhanced'
+                    ? 'bg-white text-neutral-900 font-semibold shadow-2xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+                title="Reveals real physical thickness prominently in X, Y, and Z dimensions"
+              >
+                Visible Shell
+              </button>
+              <button
+                type="button"
+                onClick={() => setThicknessDisplay('true')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors ${
+                  thicknessDisplay === 'true'
+                    ? 'bg-white text-neutral-900 font-semibold shadow-2xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+                title="Shows 1:1 true scale millimeter fabric thickness"
+              >
+                1:1 True
+              </button>
+              <button
+                type="button"
+                onClick={() => setThicknessDisplay('off')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors ${
+                  thicknessDisplay === 'off'
+                    ? 'bg-white text-neutral-900 font-semibold shadow-2xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+                title="Hide thickness outlines"
+              >
+                Solid
+              </button>
+            </div>
+          </div>
+
           {/* Wasted Void Toggle */}
           <button
             type="button"
@@ -543,7 +796,7 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
         {/* Interaction Hint Overlay */}
         <div className="absolute top-5 left-5 z-10 pointer-events-none flex items-center space-x-2 bg-neutral-900/80 backdrop-blur-xs text-white text-[11px] px-2.5 py-1 rounded-full shadow-xs">
           <Rotate3d className="w-3 h-3 text-sky-400 animate-spin-slow" />
-          <span>Click & drag (or touch) to rotate · Scroll to zoom</span>
+          <span>Click & drag (or touch) to rotate · Scroll to zoom · Hover cube to inspect 3D thickness</span>
         </div>
 
         {/* Current Orientation Readout */}
@@ -551,10 +804,60 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
           Yaw: {yaw}° · Pitch: {pitch}°
         </div>
 
+        {/* Hovered Cube Thickness HUD Card */}
+        {hoveredCube && (
+          <div className="absolute bottom-14 left-5 z-20 bg-white/95 backdrop-blur-md border border-sky-300 p-3 rounded-xl shadow-lg max-w-xs text-xs pointer-events-none transition-all animate-in fade-in slide-in-from-bottom-2">
+            <div className="flex items-center space-x-2 mb-1.5 pb-1 border-b border-neutral-100">
+              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: hoveredCube.color }} />
+              <span className="font-bold text-neutral-900 truncate">{hoveredCube.name}</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-neutral-100 rounded text-neutral-600 font-medium">
+                {hoveredCube.category}
+              </span>
+            </div>
+
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex items-center justify-between text-neutral-600">
+                <span>User-Specified Inner Core:</span>
+                <span className="font-mono font-semibold text-neutral-900">
+                  {formatDimensions(hoveredCube.originalDimensions, units)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-sky-800 bg-sky-50 px-2 py-1 rounded border border-sky-200">
+                <span className="flex items-center space-x-1 font-medium">
+                  <Layers className="w-3.5 h-3.5 text-sky-600" />
+                  <span>Thickness (X, Y, Z):</span>
+                </span>
+                <span className="font-mono font-bold">
+                  +{fromBase(hoveredCube.fabricThickness ?? 0.024, units)} {units} / axis
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-neutral-600">
+                <span>Effective Outer Footprint:</span>
+                <span className="font-mono font-semibold text-neutral-800">
+                  {hoveredCube.effectiveDimensions
+                    ? formatDimensions(hoveredCube.effectiveDimensions, units)
+                    : formatDimensions(hoveredCube.originalDimensions, units)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-neutral-500 text-[10px] pt-1 border-t border-neutral-100">
+                <span>Position in Container:</span>
+                <span className="font-mono">
+                  ({fromBase(hoveredCube.x, units)}, {fromBase(hoveredCube.y, units)}, {fromBase(hoveredCube.z, units)})
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="w-full h-96 relative flex items-center justify-center select-none">
           <canvas
             ref={canvasRef}
             onMouseDown={handleMouseDown}
+            onMouseMove={handleCanvasMouseMove}
+            onMouseLeave={() => setHoveredCube(null)}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
@@ -566,12 +869,20 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
         </div>
 
         {/* Legend / Overlay info */}
-        <div className="flex items-center justify-between pt-2 border-t border-neutral-200 text-xs text-neutral-600">
-          <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-200 text-xs text-neutral-600">
+          <div className="flex items-center space-x-3 flex-wrap gap-y-1">
             <span className="flex items-center space-x-1.5">
               <span className="w-3 h-3 rounded-xs border border-sky-500 bg-sky-100 inline-block" />
               <span>Suitcase Acrylic Frame</span>
             </span>
+
+            <span className="flex items-center space-x-1.5">
+              <span className="w-3 h-3 rounded-xs border border-neutral-400 bg-neutral-200 inline-flex items-center justify-center">
+                <span className="w-1.5 h-1.5 bg-neutral-600 rounded-2xs" />
+              </span>
+              <span className="font-medium text-neutral-700">Inner Core & Outer Shell (X, Y, Z Thickness)</span>
+            </span>
+
             <span className="flex items-center space-x-1.5">
               <span className="w-3 h-3 rounded-xs border border-amber-500 bg-amber-200/50 inline-block" />
               <span className="font-semibold text-amber-800">Unoccupied Wasted Volume</span>

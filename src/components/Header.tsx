@@ -1,13 +1,15 @@
 import React, { useState, useRef } from 'react';
 import { UnitSystem, AppState } from '../types';
-import { Luggage, Rotate3d, Settings2, Download, Upload, RotateCcw } from 'lucide-react';
-import { exportStateAsJson, importStateFromJson } from '../utils/storage';
+import { Luggage, Rotate3d, Settings2, Download, Upload, RotateCcw, Layers } from 'lucide-react';
+import { exportStateAsJson, importStateFromJson, DEFAULT_FABRIC_THICKNESS } from '../utils/storage';
 
 interface HeaderProps {
   units: UnitSystem;
   onToggleUnits: (newUnits: UnitSystem) => void;
   allowRotation: boolean;
   onToggleRotation: (allow: boolean) => void;
+  fabricThickness: number;
+  onUpdateFabricThickness: (thickness: number) => void;
   appState: AppState;
   onResetPresets: () => void;
   onImportState: (imported: AppState) => void;
@@ -18,6 +20,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleUnits,
   allowRotation,
   onToggleRotation,
+  fabricThickness,
+  onUpdateFabricThickness,
   appState,
   onResetPresets,
   onImportState,
@@ -161,6 +165,47 @@ export const Header: React.FC<HeaderProps> = ({
                     <Rotate3d className="w-4 h-4 text-neutral-500" />
                     <span>Allow 3D Cube Rotation ({allowRotation ? 'Yes' : 'Flat only'})</span>
                   </button>
+
+                  <div className="border-t border-neutral-100 my-1"></div>
+
+                  <div className="px-3 py-1 font-medium text-neutral-400 uppercase tracking-wider text-[10px] flex items-center space-x-1.5">
+                    <Layers className="w-3 h-3 text-neutral-400" />
+                    <span>Fabric Material Thickness</span>
+                  </div>
+
+                  <div className="px-2 py-0.5 space-y-0.5">
+                    {[
+                      { value: DEFAULT_FABRIC_THICKNESS, label: '70D Ripstop Nylon (0.24 mm)', desc: 'Ultralight 2-wall spec' },
+                      { value: 0.050, label: '70D with Seams (0.50 mm)', desc: 'Folded edge reinforcement' },
+                      { value: 0.060, label: '210D Oxford Nylon (0.60 mm)', desc: 'Standard travel cube' },
+                      { value: 0.120, label: 'Heavy / Padded (1.20 mm)', desc: 'Canvas or padded gear' },
+                      { value: 0, label: 'Zero Clearance (0 mm)', desc: 'Pure geometric ideal' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          onUpdateFabricThickness(opt.value);
+                          setShowSettings(false);
+                        }}
+                        className={`w-full text-left px-2 py-1.5 rounded-lg flex items-center justify-between transition-colors ${
+                          Math.abs(fabricThickness - opt.value) < 0.001
+                            ? 'bg-sky-50 text-sky-900 font-semibold'
+                            : 'text-neutral-600 hover:bg-neutral-50'
+                        }`}
+                      >
+                        <div>
+                          <div className="text-[11px] leading-tight">{opt.label}</div>
+                          <div className="text-[9px] text-neutral-400 font-normal">{opt.desc}</div>
+                        </div>
+                        {Math.abs(fabricThickness - opt.value) < 0.001 && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-600 shrink-0 ml-1.5"></span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="border-t border-neutral-100 my-1"></div>
 
                   <button
                     type="button"

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { LuggageProfile, UnitSystem, Dimensions } from '../types';
+import { LuggageProfile, UnitSystem, Dimensions, PermanentObject } from '../types';
 import { fromBase, toBase, formatDimensions, computeVolumeLiters, formatVolume } from '../utils/units';
-import { Luggage, Plus, Trash2, Edit3, Check, X, Box } from 'lucide-react';
+import { Luggage, Plus, Trash2, Edit3, Check, X, Box, Shield } from 'lucide-react';
+import { PermanentObjectsDialog } from './PermanentObjectsDialog';
 
 interface LuggageManagerProps {
   units: UnitSystem;
@@ -44,7 +45,22 @@ export const LuggageManager: React.FC<LuggageManagerProps> = ({
   const [formHeight, setFormHeight] = useState<number>(20);
   const [formColor, setFormColor] = useState<string>('#0284c7');
 
+  // Obstacles Dialog state
+  const [isObstaclesDialogOpen, setIsObstaclesDialogOpen] = useState(false);
+  const [managingObstaclesLuggage, setManagingObstaclesLuggage] = useState<LuggageProfile | null>(null);
+
   const activeLuggage = luggageList.find((l) => l.id === selectedLuggageId) || luggageList[0];
+
+  const handleUpdatePermanentObjects = (luggageId: string, objects: PermanentObject[]) => {
+    const target = luggageList.find((l) => l.id === luggageId);
+    if (target) {
+      const updated = { ...target, permanentObjects: objects };
+      onUpdateLuggage(updated);
+      if (managingObstaclesLuggage?.id === luggageId) {
+        setManagingObstaclesLuggage(updated);
+      }
+    }
+  };
 
   const startCreate = () => {
     setIsCreating(true);
@@ -319,11 +335,23 @@ export const LuggageManager: React.FC<LuggageManagerProps> = ({
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center justify-between text-xs">
+          <div className="mt-4 pt-3 border-t border-neutral-800 flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="text-neutral-400">
               Box Aspect: {fromBase(activeLuggage.dimensions.length, units)}L × {fromBase(activeLuggage.dimensions.width, units)}W × {fromBase(activeLuggage.dimensions.height, units)}H
             </span>
             <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setManagingObstaclesLuggage(activeLuggage);
+                  setIsObstaclesDialogOpen(true);
+                }}
+                className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-slate-800 text-slate-200 hover:text-white hover:bg-slate-700 transition-colors border border-slate-700 shadow-2xs cursor-pointer"
+                title="Configure handle tubes, casings, and internal obstacles"
+              >
+                <Shield className="w-3.5 h-3.5 text-sky-400" />
+                <span>Interior Obstacles ({activeLuggage.permanentObjects?.length || 0})</span>
+              </button>
               <button
                 type="button"
                 onClick={() => startEdit(activeLuggage)}
@@ -353,6 +381,7 @@ export const LuggageManager: React.FC<LuggageManagerProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {luggageList.map((lug) => {
             const isSelected = lug.id === selectedLuggageId;
+            const obstacleCount = lug.permanentObjects?.length || 0;
             return (
               <div
                 key={lug.id}
@@ -369,8 +398,19 @@ export const LuggageManager: React.FC<LuggageManagerProps> = ({
                     style={{ backgroundColor: lug.color || '#0284c7' }}
                   />
                   <div className="min-w-0">
-                    <div className="text-xs font-semibold text-neutral-900 truncate">
-                      {lug.name}
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-xs font-semibold text-neutral-900 truncate">
+                        {lug.name}
+                      </span>
+                      {obstacleCount > 0 && (
+                        <span
+                          className="inline-flex items-center space-x-0.5 px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 text-[10px] font-medium shrink-0"
+                          title={`${obstacleCount} interior obstacle(s)`}
+                        >
+                          <Shield className="w-2.5 h-2.5 text-slate-600" />
+                          <span>{obstacleCount}</span>
+                        </span>
+                      )}
                     </div>
                     <div className="text-[11px] text-neutral-500 font-mono">
                       {formatDimensions(lug.dimensions, units)}
@@ -382,6 +422,18 @@ export const LuggageManager: React.FC<LuggageManagerProps> = ({
                   <span className="text-xs font-medium text-neutral-600 mr-1">
                     {computeVolumeLiters(lug.dimensions)}L
                   </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setManagingObstaclesLuggage(lug);
+                      setIsObstaclesDialogOpen(true);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-neutral-400 hover:text-slate-700 rounded-md transition-opacity"
+                    title="Configure interior obstacles"
+                  >
+                    <Shield className="w-3.5 h-3.5" />
+                  </button>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -412,6 +464,22 @@ export const LuggageManager: React.FC<LuggageManagerProps> = ({
           })}
         </div>
       </div>
+
+      {/* Permanent Interior Objects Dialog */}
+      {isObstaclesDialogOpen && managingObstaclesLuggage && (
+        <PermanentObjectsDialog
+          isOpen={isObstaclesDialogOpen}
+          onClose={() => {
+            setIsObstaclesDialogOpen(false);
+            setManagingObstaclesLuggage(null);
+          }}
+          luggage={
+            luggageList.find((l) => l.id === managingObstaclesLuggage.id) || managingObstaclesLuggage
+          }
+          units={units}
+          onUpdatePermanentObjects={handleUpdatePermanentObjects}
+        />
+      )}
     </div>
   );
 };

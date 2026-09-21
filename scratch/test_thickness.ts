@@ -64,4 +64,46 @@ if (result6_1.placedCubes.length !== 2) {
   process.exit(1);
 }
 
+console.log('\n--- TEST 4: Luggage with Permanent Interior Obstacle (Handle Casing) ---');
+const containerWithObstacle: LuggageProfile = {
+  ...container6_1in,
+  id: 'test-luggage-with-obstacle',
+  name: '6.1in Container with Handle Rods',
+  permanentObjects: [
+    {
+      id: 'handle-rod-1',
+      name: 'Interior Handle Rod',
+      dimensions: { length: 15.494, width: 4.0, height: 3.0 },
+      x: 0,
+      y: 0,
+      z: 0,
+    },
+  ],
+};
+
+const resultObstacle = calculateOptimalPacking(containerWithObstacle, [cube3in], false, DEFAULT_FABRIC_THICKNESS);
+console.log(`Placed cubes count with obstacle: ${resultObstacle.placedCubes.length}`);
+console.log(`Permanent objects count: ${resultObstacle.permanentObjects?.length ?? 0}`);
+console.log(`Usable luggage volume: ${(resultObstacle.usableLuggageVolume ?? 0).toFixed(2)} cm³ (deducted: ${(resultObstacle.permanentObjectsVolume ?? 0).toFixed(2)} cm³)`);
+
+if ((resultObstacle.permanentObjectsVolume ?? 0) <= 0) {
+  console.error('FAILED: permanentObjectsVolume should be greater than 0');
+  process.exit(1);
+}
+if ((resultObstacle.usableLuggageVolume ?? 0) >= resultObstacle.totalLuggageVolume) {
+  console.error('FAILED: usableLuggageVolume must be less than totalLuggageVolume');
+  process.exit(1);
+}
+// Check that none of the placed cubes overlap with the obstacle
+for (const placed of resultObstacle.placedCubes) {
+  const obs = containerWithObstacle.permanentObjects![0];
+  const overlapX = placed.x < obs.x + obs.dimensions.length && placed.x + placed.placedLength > obs.x;
+  const overlapY = placed.y < obs.y + obs.dimensions.width && placed.y + placed.placedWidth > obs.y;
+  const overlapZ = placed.z < obs.z + obs.dimensions.height && placed.z + placed.placedHeight > obs.z;
+  if (overlapX && overlapY && overlapZ) {
+    console.error('FAILED: Placed cube collides with permanent obstacle!');
+    process.exit(1);
+  }
+}
+
 console.log('\nALL VERIFICATION TESTS PASSED SUCCESSFULLY!');

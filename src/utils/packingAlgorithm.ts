@@ -1,4 +1,4 @@
-import { Dimensions, LuggageProfile, PackingCubeItem, PlacedCube, PackingResult, WastedSpacePocket } from '../types';
+import { Dimensions, LuggageProfile, PackingCubeItem, PlacedCube, PackingResult, WastedSpacePocket, PermanentObject } from '../types';
 import { DEFAULT_FABRIC_THICKNESS } from './storage';
 
 interface Point3D {
@@ -91,7 +91,10 @@ function getOrientations(dim: Dimensions, allowFullRotation: boolean, locked = f
 }
 
 interface PlacedItemRecord {
-  cube: PlacedCube;
+  recordId: string;
+  cube?: PlacedCube;
+  obstacle?: PermanentObject;
+  isObstacle?: boolean;
   effX: number;
   effY: number;
   effZ: number;
@@ -173,7 +176,7 @@ function generateExtremePoints(placedRecords: PlacedItemRecord[], luggage: Dimen
 
     // Wall intersection projections
     for (const other of placedRecords) {
-      if (other.cube.instanceId === b.cube.instanceId) continue;
+      if (other.recordId === b.recordId) continue;
       // Along X
       if (b.effX + b.effDx <= other.effX) {
         rawPoints.push({ x: b.effX + b.effDx, y: other.effY, z: other.effZ });
@@ -246,11 +249,27 @@ function runPackingPass(
     flatOnly?: boolean;
     floorPriority?: boolean;
   } = {},
-  fabricThickness: number = DEFAULT_FABRIC_THICKNESS
+  fabricThickness: number = DEFAULT_FABRIC_THICKNESS,
+  permanentObjects: PermanentObject[] = []
 ): { placed: PlacedCube[]; unplaced: ExpandedItem[] } {
   const placed: PlacedCube[] = [];
   const placedRecords: PlacedItemRecord[] = [];
   const unplaced: ExpandedItem[] = [];
+
+  // Pre-seed placedRecords with rigid permanent objects (handle casings, wheel wells, etc.)
+  for (const obj of permanentObjects) {
+    placedRecords.push({
+      recordId: `obstacle-${obj.id}`,
+      obstacle: obj,
+      isObstacle: true,
+      effX: obj.x,
+      effY: obj.y,
+      effZ: obj.z,
+      effDx: obj.dimensions.length,
+      effDy: obj.dimensions.width,
+      effDz: obj.dimensions.height,
+    });
+  }
 
   const { preferTransposed = false, flatOnly = false, floorPriority = true } = options;
 
@@ -372,6 +391,7 @@ function runPackingPass(
 
       placed.push(placedCube);
       placedRecords.push({
+        recordId: item.instanceId,
         cube: placedCube,
         effX: bestPlacement.point.x,
         effY: bestPlacement.point.y,
@@ -517,10 +537,16 @@ export function calculateOptimalPacking(
   fabricThickness: number = DEFAULT_FABRIC_THICKNESS
 ): PackingResult {
   const luggageDimensions = luggage.dimensions;
+  const permanentObjects = luggage.permanentObjects || [];
+  const permanentObjectsVolume = permanentObjects.reduce(
+    (acc, obj) => acc + (obj.dimensions.length * obj.dimensions.width * obj.dimensions.height),
+    0
+  );
   const normalizedFabricThickness = Number.isFinite(fabricThickness)
     ? Math.max(0, fabricThickness)
     : DEFAULT_FABRIC_THICKNESS;
   const totalLuggageVolume = luggageDimensions.length * luggageDimensions.width * luggageDimensions.height;
+  const usableLuggageVolume = Math.max(0, totalLuggageVolume - permanentObjectsVolume);
 
   // Flatten quantity into individual items
   const expandedItems: ExpandedItem[] = [];
@@ -539,12 +565,15 @@ export function calculateOptimalPacking(
       placedCubes: [],
       unplacedCubes: [],
       totalLuggageVolume,
+      usableLuggageVolume,
+      permanentObjectsVolume,
       totalPackedVolume: 0,
-      wastedVolume: totalLuggageVolume,
+      wastedVolume: usableLuggageVolume,
       efficiencyPercentage: 0,
       wastedPercentage: 100,
       wastedPockets: analyzeWastedSpacePockets(luggageDimensions, []),
       layers: [],
+      permanentObjects,
     };
   }
 
@@ -620,7 +649,14 @@ export function calculateOptimalPacking(
   for (const config of passConfigs) {
     for (const heuristic of heuristics) {
       const sortedList = [...expandedItems].sort(heuristic.sorter);
-      const result = runPackingPass(sortedList, luggageDimensions, allowGlobalRotation, config, normalizedFabricThickness);
+      const result = runPackingPass(
+        sortedList,
+        luggageDimensions,
+        allowGlobalRotation,
+        config,
+        normalizedFabricThickness,
+        permanentObjects
+      );
 
       // Score: strongly prioritize packing MORE items, then higher packed volume, then compact height
       const packedCount = result.placed.length;
@@ -639,10 +675,12 @@ export function calculateOptimalPacking(
   const finalPlaced = bestResult ? bestResult.placed : [];
   const finalUnplaced = bestResult ? bestResult.unplaced : [];
 
-  // Compute total packed volume
+  // Compute total packed volume and efficiency against usable interior volume
   const totalPackedVolume = finalPlaced.reduce((sum, b) => sum + b.volume, 0);
-  const wastedVolume = Math.max(0, totalLuggageVolume - totalPackedVolume);
-  const efficiencyPercentage = Number(((totalPackedVolume / totalLuggageVolume) * 100).toFixed(1));
+  const wastedVolume = Math.max(0, usableLuggageVolume - totalPackedVolume);
+  const efficiencyPercentage = usableLuggageVolume > 0
+    ? Number(((totalPackedVolume / usableLuggageVolume) * 100).toFixed(1))
+    : 0;
   const wastedPercentage = Number((100 - efficiencyPercentage).toFixed(1));
 
   // Count unplaced items by original cube
@@ -669,11 +707,14 @@ export function calculateOptimalPacking(
     placedCubes: finalPlaced,
     unplacedCubes,
     totalLuggageVolume,
+    usableLuggageVolume,
+    permanentObjectsVolume,
     totalPackedVolume,
     wastedVolume,
     efficiencyPercentage,
     wastedPercentage,
     wastedPockets,
     layers,
+    permanentObjects,
   };
 }

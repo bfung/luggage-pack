@@ -25,7 +25,8 @@ Keep README.md updates concise and focused on actionable information for end use
 - Keep user-entered cube dimensions unchanged in forms, inventory, manifests, and displayed measurements.
 - Geometry uses centimeters internally; convert only at input/output boundaries.
 - Fabric thickness is a placement allowance, not a mutation of nominal dimensions. The default is `0.024` cm for 70D ripstop nylon, with selectable alternatives in Settings.
-- Preserve backwards-compatible defaults when loading older local-storage or imported JSON data.
+- Permanent interior objects (handle tubes, wheel housings) are defined per luggage profile with nominal length, width, height, and coordinates `(x, y, z)` within the container interior.
+- Preserve backwards-compatible defaults when loading older local-storage or imported JSON data (e.g. empty `permanentObjects` arrays).
 - Keep packing and recommendation calculations deterministic, client-side, and free of external AI/runtime services unless explicitly requested.
 - Keep state coordination in `src/App.tsx`, shared models in `src/types.ts`, and use Tailwind utilities for styling with accessible contrast.
 
@@ -35,6 +36,9 @@ Keep README.md updates concise and focused on actionable information for end use
 - Updated packing, collision, support, wasted-space, and recommendation calculations to account for effective fabric-inclusive footprints while retaining nominal dimensions.
 - Enhanced the 3D visualizer with thickness display modes, hover details, and repaired the interrupted JSX/yaw-aware face rendering.
 - Added and verified the 6-inch/3-inch regression scenario in `scratch/test_thickness.ts`.
+- Added luggage-associated permanent interior objects with position in container (`x, y, z`) and dimensions (`length, width, height`) via a dedicated dialog in the Luggage Manager.
+- Integrated interior obstacles into collision checking, layer bounds, usable volume calculations, 3D visualization with interactive hover inspection, and space audit reporting.
+- Added permanent obstacle collision and deduction regression verification to `scratch/test_thickness.ts`.
 
 ## AI Studio Environment Requirements
 

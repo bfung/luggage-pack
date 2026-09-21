@@ -4,7 +4,7 @@ Luggage Pack helps you arrange packing cubes inside a suitcase, understand unuse
 
 ## For users
 
-1. Start with a luggage preset or create a profile with your interior length, width, and height.
+1. Start with a luggage preset or create a profile with your interior length, width, and height. You can also configure permanent interior objects (such as telescoping handle casings or wheel housings) with specific dimensions and positions so cubes pack accurately around them.
 2. Add packing cubes, set their dimensions and quantities, and choose whether rotation is allowed.
 3. Review the arrangement, packed volume, unplaced items, layer breakdown, and wasted-space audit.
 4. Use purchase suggestions to explore cube sizes that may fit the remaining voids.
@@ -37,13 +37,13 @@ npm run build   # Production build
 npm run preview # Preview dist/
 ```
 
-For the fabric-clearance regression check:
+For the packing regression check:
 
 ```bash
 npx tsx scratch/test_thickness.ts
 ```
 
-The test covers zero-clearance packing, the 70D 0.024 cm allowance, a slightly larger container, and preservation of user-entered dimensions.
+The test covers zero-clearance packing, the 70D 0.024 cm allowance, a slightly larger container, interior obstacle collision avoidance, and preservation of user-entered dimensions.
 
 Use the package manager and Node-version tooling available in your environment. On the maintainer’s laptop, `mise exec -- <command>` is the supported way to run project commands because the system Node installation is not reliable; this is not required on other machines.
 

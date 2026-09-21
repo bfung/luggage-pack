@@ -18,6 +18,9 @@ export const WastedSpaceAudit: React.FC<WastedSpaceAuditProps> = ({
 }) => {
   const {
     totalLuggageVolume,
+    usableLuggageVolume,
+    permanentObjectsVolume,
+    permanentObjects,
     totalPackedVolume,
     wastedVolume,
     efficiencyPercentage,
@@ -26,6 +29,11 @@ export const WastedSpaceAudit: React.FC<WastedSpaceAuditProps> = ({
     placedCubes,
     unplacedCubes,
   } = packingResult;
+
+  const hasPermanentObjects = (permanentObjectsVolume ?? 0) > 0;
+  const packedPct = totalLuggageVolume > 0 ? ((totalPackedVolume / totalLuggageVolume) * 100) : 0;
+  const obstaclePct = totalLuggageVolume > 0 ? (((permanentObjectsVolume ?? 0) / totalLuggageVolume) * 100) : 0;
+  const freePct = Math.max(0, 100 - packedPct - obstaclePct);
 
   // Efficiency classification
   let efficiencyGrade = 'Excellent';
@@ -48,7 +56,7 @@ export const WastedSpaceAudit: React.FC<WastedSpaceAuditProps> = ({
   return (
     <div className="space-y-4">
       {/* Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className={`grid grid-cols-1 ${hasPermanentObjects ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-3`}>
         {/* Card 1: Utilized Volume */}
         <div className="p-4 rounded-xl border border-neutral-200 bg-white shadow-2xs">
           <div className="text-xs font-medium text-neutral-500 mb-1">Packed Item Volume</div>
@@ -60,18 +68,31 @@ export const WastedSpaceAudit: React.FC<WastedSpaceAuditProps> = ({
           </div>
         </div>
 
-        {/* Card 2: Wasted / Free Space */}
+        {/* Card 2: Permanent Interior Obstacles (if any) */}
+        {hasPermanentObjects && (
+          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 shadow-2xs">
+            <div className="text-xs font-medium text-slate-600 mb-1">Interior Obstacles</div>
+            <div className="text-xl font-bold text-slate-800">
+              {formatVolume(permanentObjectsVolume ?? 0, units)}
+            </div>
+            <div className="text-xs text-slate-600 mt-1">
+              {(permanentObjects ?? []).length} fixtures (usable: {formatVolume(usableLuggageVolume ?? totalLuggageVolume, units)})
+            </div>
+          </div>
+        )}
+
+        {/* Card 3: Wasted / Free Space */}
         <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/50 shadow-2xs">
           <div className="text-xs font-medium text-amber-700 mb-1">Unused Wasted Space</div>
           <div className="text-xl font-bold text-amber-900">
             {formatVolume(wastedVolume, units)}
           </div>
           <div className="text-xs text-amber-800 mt-1 font-medium">
-            {wastedPercentage}% of luggage volume is empty
+            {wastedPercentage}% of usable space is empty
           </div>
         </div>
 
-        {/* Card 3: Efficiency Rating */}
+        {/* Card 4: Efficiency Rating */}
         <div className={`p-4 rounded-xl border ${gradeColor} shadow-2xs`}>
           <div className="text-xs font-medium opacity-80 mb-1">Packing Density Grade</div>
           <div className="text-xl font-bold">{efficiencyPercentage}%</div>
@@ -84,33 +105,52 @@ export const WastedSpaceAudit: React.FC<WastedSpaceAuditProps> = ({
         <div className="flex items-center justify-between text-xs font-semibold mb-2">
           <span className="text-neutral-700">Space Allocation Breakdown</span>
           <span className="text-neutral-500 font-mono">
-            Total Container Capacity: {formatVolume(totalLuggageVolume, units)}
+            {hasPermanentObjects
+              ? `Gross: ${formatVolume(totalLuggageVolume, units)} · Net Usable: ${formatVolume(usableLuggageVolume ?? totalLuggageVolume, units)}`
+              : `Total Container Capacity: ${formatVolume(totalLuggageVolume, units)}`}
           </span>
         </div>
 
         <div className="h-4 w-full bg-amber-100 rounded-full overflow-hidden flex border border-neutral-200">
           <div
             className="h-full bg-emerald-600 transition-all duration-300 relative group"
-            style={{ width: `${Math.min(100, efficiencyPercentage)}%` }}
-            title={`Packed: ${efficiencyPercentage}%`}
+            style={{ width: `${Math.min(100, packedPct)}%` }}
+            title={`Packed items: ${packedPct.toFixed(1)}%`}
           />
+          {hasPermanentObjects && (
+            <div
+              className="h-full bg-slate-600 transition-all duration-300 relative group"
+              style={{ width: `${Math.min(100, obstaclePct)}%` }}
+              title={`Interior Obstacles: ${obstaclePct.toFixed(1)}%`}
+            />
+          )}
           <div
             className="h-full bg-amber-400/80 transition-all duration-300 relative group"
-            style={{ width: `${Math.max(0, wastedPercentage)}%` }}
-            title={`Wasted: ${wastedPercentage}%`}
+            style={{ width: `${Math.max(0, freePct)}%` }}
+            title={`Unused space: ${freePct.toFixed(1)}%`}
           />
         </div>
 
-        <div className="flex items-center justify-between text-[11px] text-neutral-500 mt-2">
-          <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block" />
-            <span>Utilized Space ({efficiencyPercentage}%)</span>
-          </div>
-          <div className="flex items-center space-x-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
-            <span className="font-semibold text-amber-900">
-              Wasted / Empty Void ({wastedPercentage}%)
-            </span>
+        <div className="flex items-center justify-between text-[11px] text-neutral-500 mt-2 flex-wrap gap-2">
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block" />
+              <span>Packed Items ({efficiencyPercentage}% of usable)</span>
+            </div>
+            {hasPermanentObjects && (
+              <div className="flex items-center space-x-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-slate-600 inline-block" />
+                <span className="font-medium text-slate-700">
+                  Interior Obstacles ({obstaclePct.toFixed(1)}% of total)
+                </span>
+              </div>
+            )}
+            <div className="flex items-center space-x-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
+              <span className="font-semibold text-amber-900">
+                Unoccupied Void ({wastedPercentage}%)
+              </span>
+            </div>
           </div>
         </div>
       </div>

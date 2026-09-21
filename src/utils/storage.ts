@@ -32,7 +32,10 @@ export function loadStoredState(): AppState {
     return {
       units: parsed.units === 'in' ? 'in' : 'cm',
       selectedLuggageId: parsed.selectedLuggageId || parsed.luggageList[0].id,
-      luggageList: parsed.luggageList,
+      luggageList: parsed.luggageList.map((l: LuggageProfile) => ({
+        ...l,
+        permanentObjects: Array.isArray(l.permanentObjects) ? l.permanentObjects : [],
+      })),
       cubesList: Array.isArray(parsed.cubesList) ? parsed.cubesList : DEFAULT_CUBES_PRESETS,
       allowRotation: parsed.allowRotation !== undefined ? parsed.allowRotation : true,
       fabricThickness: readFabricThickness(parsed.fabricThickness),
@@ -64,7 +67,10 @@ export function importStateFromJson(jsonString: string): AppState | null {
     return {
       units: data.units === 'in' ? 'in' : 'cm',
       selectedLuggageId: data.selectedLuggageId || data.luggageList[0]?.id || 'luggage-default',
-      luggageList: data.luggageList,
+      luggageList: data.luggageList.map((l: LuggageProfile) => ({
+        ...l,
+        permanentObjects: Array.isArray(l.permanentObjects) ? l.permanentObjects : [],
+      })),
       cubesList: data.cubesList,
       allowRotation: data.allowRotation !== undefined ? data.allowRotation : true,
       fabricThickness: readFabricThickness(data.fabricThickness),

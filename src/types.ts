@@ -6,12 +6,24 @@ export interface Dimensions {
   height: number; // Z axis (depth)
 }
 
+export interface PermanentObject {
+  id: string;
+  name: string;
+  dimensions: Dimensions; // stored in base units (cm): length = X, width = Y, height = Z
+  // Position in container (offset from container origin 0,0,0)
+  x: number;
+  y: number;
+  z: number;
+  color?: string;
+}
+
 export interface LuggageProfile {
   id: string;
   name: string;
   dimensions: Dimensions; // stored in base units (cm)
   color?: string;
   isPreset?: boolean;
+  permanentObjects?: PermanentObject[];
 }
 
 export interface PackingCubeItem {
@@ -80,6 +92,8 @@ export interface PackingResult {
     unplacedCount: number;
   }[];
   totalLuggageVolume: number;
+  usableLuggageVolume: number;
+  permanentObjectsVolume: number;
   totalPackedVolume: number;
   wastedVolume: number;
   efficiencyPercentage: number;
@@ -90,6 +104,7 @@ export interface PackingResult {
     zTop: number;
     cubeCount: number;
   }[];
+  permanentObjects?: PermanentObject[];
 }
 
 export interface AppState {

@@ -36,12 +36,15 @@ export default function App() {
         placedCubes: [],
         unplacedCubes: [],
         totalLuggageVolume: 0,
+        usableLuggageVolume: 0,
+        permanentObjectsVolume: 0,
         totalPackedVolume: 0,
         wastedVolume: 0,
         efficiencyPercentage: 0,
         wastedPercentage: 100,
         wastedPockets: [],
         layers: [],
+        permanentObjects: [],
       };
     }
     return calculateOptimalPacking(

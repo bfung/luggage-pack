@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Dimensions, PlacedCube, PackingResult, UnitSystem } from '../types';
-import { fromBase, formatDimensions, formatVolume } from '../utils/units';
-import { Rotate3d, ZoomIn, ZoomOut, Eye, Layers, Sparkles } from 'lucide-react';
+import { Dimensions, PlacedCube, PackingResult, UnitSystem, PermanentObject } from '../types';
+import { fromBase, formatDimensions, formatVolume, computeVolumeLiters } from '../utils/units';
+import { Rotate3d, ZoomIn, ZoomOut, Eye, Layers, Sparkles, Shield } from 'lucide-react';
 
 interface Isometric3DViewProps {
   luggageDimensions: Dimensions;
@@ -24,11 +24,14 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
   const [showWastedVoid, setShowWastedVoid] = useState<boolean>(true);
   const [thicknessDisplay, setThicknessDisplay] = useState<'enhanced' | 'true' | 'off'>('enhanced');
   const [hoveredCube, setHoveredCube] = useState<PlacedCube | null>(null);
+  const [hoveredObstacle, setHoveredObstacle] = useState<PermanentObject | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
   // Ref for hit regions during mouse hover
   const hitRegionsRef = useRef<Array<{
-    cube: PlacedCube;
+    type: 'cube' | 'obstacle';
+    cube?: PlacedCube;
+    obstacle?: PermanentObject;
     quads: Array<{ x2d: number; y2d: number }[]>;
   }>>([]);
 
@@ -42,7 +45,13 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
     startZoom?: number;
   }>({ startX: 0, startY: 0, startYaw: 45, startPitch: 30 });
 
-  const { placedCubes, wastedVolume, efficiencyPercentage, wastedPockets } = packingResult;
+  const {
+    placedCubes,
+    wastedVolume,
+    efficiencyPercentage,
+    wastedPockets,
+    permanentObjects = [],
+  } = packingResult;
 
   // Mouse interaction handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -112,15 +121,22 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
     const my = e.clientY - rect.top;
 
     const regions = hitRegionsRef.current;
-    let found: PlacedCube | null = null;
+    let foundCube: PlacedCube | null = null;
+    let foundObstacle: PermanentObject | null = null;
     for (let i = regions.length - 1; i >= 0; i--) {
       const r = regions[i];
       if (r.quads.some((q) => isPointInQuad(mx, my, q))) {
-        found = r.cube;
-        break;
+        if (r.type === 'cube' && r.cube) {
+          foundCube = r.cube;
+          break;
+        } else if (r.type === 'obstacle' && r.obstacle) {
+          foundObstacle = r.obstacle;
+          break;
+        }
       }
     }
-    setHoveredCube(found);
+    setHoveredCube(foundCube);
+    setHoveredObstacle(foundObstacle);
   };
 
   // Touch interaction handlers (single-finger rotate, two-finger pinch zoom)
@@ -271,9 +287,10 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
 
     // Collect all items to render with painter's algorithm
     interface RenderableBlock {
-      type: 'cube' | 'wasted';
+      type: 'cube' | 'wasted' | 'obstacle';
       cube?: PlacedCube;
       pocket?: (typeof wastedPockets)[0];
+      obstacle?: PermanentObject;
       centerDepth: number;
       x: number;
       y: number;
@@ -285,6 +302,28 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
     }
 
     const blocks: RenderableBlock[] = [];
+
+    // Add permanent interior obstacles (handle tubes, casings, wheel housings)
+    const permanentObjects = packingResult.permanentObjects || [];
+    permanentObjects.forEach((obs) => {
+      const center = project(
+        obs.x + obs.dimensions.length / 2,
+        obs.y + obs.dimensions.width / 2,
+        obs.z + obs.dimensions.height / 2
+      );
+      blocks.push({
+        type: 'obstacle',
+        obstacle: obs,
+        centerDepth: center.depth,
+        x: obs.x,
+        y: obs.y,
+        z: obs.z,
+        dx: obs.dimensions.length,
+        dy: obs.dimensions.width,
+        dz: obs.dimensions.height,
+        color: obs.color || '#475569',
+      });
+    });
 
     // Add cubes
     placedCubes.forEach((c) => {
@@ -394,6 +433,94 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
         ctx.stroke();
 
         ctx.restore();
+        return;
+      }
+
+      if (type === 'obstacle') {
+        const obs = block.obstacle;
+        const isHovered = hoveredObstacle?.id === obs?.id;
+        const obstacleColor = color || '#475569';
+
+        const topCol = adjustColor(obstacleColor, 1.25);
+        const side1Col = adjustColor(obstacleColor, 0.90);
+        const side2Col = adjustColor(obstacleColor, 0.70);
+
+        const quadsForHit: Array<{ x2d: number; y2d: number }[]> = [];
+
+        // 1. Top face (Z+)
+        const t0 = project(x, y, z + dz);
+        const t1 = project(x + dx, y, z + dz);
+        const t2 = project(x + dx, y + dy, z + dz);
+        const t3 = project(x, y + dy, z + dz);
+        quadsForHit.push([t0, t1, t2, t3]);
+
+        ctx.beginPath();
+        ctx.moveTo(t0.x2d, t0.y2d);
+        ctx.lineTo(t1.x2d, t1.y2d);
+        ctx.lineTo(t2.x2d, t2.y2d);
+        ctx.lineTo(t3.x2d, t3.y2d);
+        ctx.closePath();
+        ctx.fillStyle = isHovered ? '#38bdf8' : topCol;
+        ctx.fill();
+        ctx.strokeStyle = isHovered ? '#0284c7' : '#1e293b';
+        ctx.lineWidth = isHovered ? 2 : 1.2;
+        ctx.stroke();
+
+        // 2. Visible X face
+        const isXPlus = camX >= 0;
+        const xFace = isXPlus ? x + dx : x;
+        const xA = project(xFace, y, z);
+        const xB = project(xFace, y + dy, z);
+        const xC = project(xFace, y + dy, z + dz);
+        const xD = project(xFace, y, z + dz);
+        quadsForHit.push([xA, xB, xC, xD]);
+
+        ctx.beginPath();
+        ctx.moveTo(xA.x2d, xA.y2d);
+        ctx.lineTo(xB.x2d, xB.y2d);
+        ctx.lineTo(xC.x2d, xC.y2d);
+        ctx.lineTo(xD.x2d, xD.y2d);
+        ctx.closePath();
+        ctx.fillStyle = isHovered ? '#0284c7' : side1Col;
+        ctx.fill();
+        ctx.strokeStyle = isHovered ? '#0369a1' : '#0f172a';
+        ctx.lineWidth = isHovered ? 2 : 1.2;
+        ctx.stroke();
+
+        // 3. Visible Y face
+        const isYPlus = camY >= 0;
+        const yFace = isYPlus ? y + dy : y;
+        const yA = project(x, yFace, z);
+        const yB = project(x + dx, yFace, z);
+        const yC = project(x + dx, yFace, z + dz);
+        const yD = project(x, yFace, z + dz);
+        quadsForHit.push([yA, yB, yC, yD]);
+
+        ctx.beginPath();
+        ctx.moveTo(yA.x2d, yA.y2d);
+        ctx.lineTo(yB.x2d, yB.y2d);
+        ctx.lineTo(yC.x2d, yC.y2d);
+        ctx.lineTo(yD.x2d, yD.y2d);
+        ctx.closePath();
+        ctx.fillStyle = isHovered ? '#0369a1' : side2Col;
+        ctx.fill();
+        ctx.strokeStyle = isHovered ? '#0c4a6e' : '#0f172a';
+        ctx.lineWidth = isHovered ? 2 : 1.2;
+        ctx.stroke();
+
+        // Text label on top face if large enough
+        if (obs && Math.abs(t1.x2d - t0.x2d) > 16) {
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          const labelX = (t0.x2d + t1.x2d + t2.x2d + t3.x2d) / 4;
+          const labelY = (t0.y2d + t1.y2d + t2.y2d + t3.y2d) / 4;
+          ctx.fillText(obs.name.slice(0, 14), labelX, labelY);
+        }
+
+        if (obs) {
+          hitRegionsRef.current.push({ type: 'obstacle', obstacle: obs, quads: quadsForHit });
+        }
         return;
       }
 
@@ -607,7 +734,7 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
       }
 
       if (cube) {
-        hitRegionsRef.current.push({ cube, quads: quadsForHit });
+        hitRegionsRef.current.push({ type: 'cube', cube, quads: quadsForHit });
       }
     });
 
@@ -639,7 +766,20 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
     ctx.lineTo(p0WH.x2d, p0WH.y2d);
     ctx.closePath();
     ctx.stroke();
-  }, [luggageDimensions, placedCubes, yaw, pitch, zoom, explode, showWastedVoid, wastedPockets, thicknessDisplay, hoveredCube]);
+  }, [
+    luggageDimensions,
+    placedCubes,
+    yaw,
+    pitch,
+    zoom,
+    explode,
+    showWastedVoid,
+    wastedPockets,
+    thicknessDisplay,
+    hoveredCube,
+    hoveredObstacle,
+    packingResult.permanentObjects,
+  ]);
 
   return (
     <div className="space-y-3">
@@ -852,12 +992,54 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
           </div>
         )}
 
+        {hoveredObstacle && (
+          <div className="absolute top-3 right-3 z-10 bg-white/95 backdrop-blur-xs border border-slate-300 rounded-xl p-3 shadow-lg max-w-xs text-xs pointer-events-none transition-all">
+            <div className="flex items-center space-x-2 mb-1.5 pb-1 border-b border-neutral-100">
+              <span
+                className="w-3 h-3 rounded-xs shrink-0 border border-black/20"
+                style={{ backgroundColor: hoveredObstacle.color || '#475569' }}
+              />
+              <span className="font-bold text-neutral-900 truncate">{hoveredObstacle.name}</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded font-medium flex items-center space-x-1">
+                <Shield className="w-2.5 h-2.5" />
+                <span>Interior Obstacle</span>
+              </span>
+            </div>
+
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex items-center justify-between text-neutral-600">
+                <span>Obstacle Dimensions:</span>
+                <span className="font-mono font-semibold text-neutral-900">
+                  {formatDimensions(hoveredObstacle.dimensions, units)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-slate-800 bg-slate-100 px-2 py-1 rounded border border-slate-200">
+                <span className="font-medium">Deducted Volume:</span>
+                <span className="font-mono font-bold">
+                  {computeVolumeLiters(hoveredObstacle.dimensions)} L
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-neutral-500 text-[10px] pt-1 border-t border-neutral-100">
+                <span>Position in Container:</span>
+                <span className="font-mono">
+                  ({fromBase(hoveredObstacle.x, units)}, {fromBase(hoveredObstacle.y, units)}, {fromBase(hoveredObstacle.z, units)})
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="w-full h-96 relative flex items-center justify-center select-none">
           <canvas
             ref={canvasRef}
             onMouseDown={handleMouseDown}
             onMouseMove={handleCanvasMouseMove}
-            onMouseLeave={() => setHoveredCube(null)}
+            onMouseLeave={() => {
+              setHoveredCube(null);
+              setHoveredObstacle(null);
+            }}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
@@ -875,6 +1057,15 @@ export const Isometric3DView: React.FC<Isometric3DViewProps> = ({
               <span className="w-3 h-3 rounded-xs border border-sky-500 bg-sky-100 inline-block" />
               <span>Suitcase Acrylic Frame</span>
             </span>
+
+            {permanentObjects.length > 0 && (
+              <span className="flex items-center space-x-1.5">
+                <span className="w-3 h-3 rounded-xs border border-slate-700 bg-slate-600 inline-block" />
+                <span className="font-medium text-slate-800">
+                  Interior Obstacles ({permanentObjects.length})
+                </span>
+              </span>
+            )}
 
             <span className="flex items-center space-x-1.5">
               <span className="w-3 h-3 rounded-xs border border-neutral-400 bg-neutral-200 inline-flex items-center justify-center">

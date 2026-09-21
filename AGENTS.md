@@ -26,6 +26,8 @@ Keep README.md updates concise and focused on actionable information for end use
 - Geometry uses centimeters internally; convert only at input/output boundaries.
 - Fabric thickness is a placement allowance, not a mutation of nominal dimensions. The default is `0.024` cm for 70D ripstop nylon, with selectable alternatives in Settings.
 - Permanent interior objects (handle tubes, wheel housings) are defined per luggage profile with nominal length, width, height, and coordinates `(x, y, z)` within the container interior.
+- Packing layout engine uses extended Extreme Points with boundary coordinate intersections and obstacle-aware wall projections, supporting placement on elevated fixture platforms, channels, and floor recesses.
+- Vertical support checks distinguish between soft deformable cube stacks (20% contact) and rigid permanent obstacles (5% contact ratio allows bridging across narrow rails).
 - Preserve backwards-compatible defaults when loading older local-storage or imported JSON data (e.g. empty `permanentObjects` arrays).
 - Keep packing and recommendation calculations deterministic, client-side, and free of external AI/runtime services unless explicitly requested.
 - Keep state coordination in `src/App.tsx`, shared models in `src/types.ts`, and use Tailwind utilities for styling with accessible contrast.
@@ -35,10 +37,11 @@ Keep README.md updates concise and focused on actionable information for end use
 - Added persisted fabric-thickness state with backwards-compatible storage/import defaults and Settings choices for common materials.
 - Updated packing, collision, support, wasted-space, and recommendation calculations to account for effective fabric-inclusive footprints while retaining nominal dimensions.
 - Enhanced the 3D visualizer with thickness display modes, hover details, and repaired the interrupted JSX/yaw-aware face rendering.
-- Added and verified the 6-inch/3-inch regression scenario in `scratch/test_thickness.ts`.
 - Added luggage-associated permanent interior objects with position in container (`x, y, z`) and dimensions (`length, width, height`) via a dedicated dialog in the Luggage Manager.
 - Integrated interior obstacles into collision checking, layer bounds, usable volume calculations, 3D visualization with interactive hover inspection, and space audit reporting.
-- Added permanent obstacle collision and deduction regression verification to `scratch/test_thickness.ts`.
+- Improved the 3D bin-packing layout engine for obstacles: extended Extreme Point candidate generation with cross-boundary coordinate planes and obstacle-height wall projections, allowing cubes to pack across elevated fixture platforms (e.g. handle rails) and recessed channels.
+- Calibrated support stability check to support rigid fixtures bridging across narrow rails (lowered threshold from 20% to 5% when supported by permanent obstacles).
+- Added comprehensive regression suite in `scratch/test_thickness.ts` covering zero-clearance, 70D fabric allowance, container sizing tolerances, interior obstacle collision/deduction, and twin handle rails bridging with a 14x10x3 in cube.
 
 ## AI Studio Environment Requirements
 

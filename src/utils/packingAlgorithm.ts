@@ -119,31 +119,31 @@ function calculateContactScore(
   if (Math.abs(pt.z) < 0.001) contactArea += effOri.dx * effOri.dy * 1.5;
 
   // Contact with luggage boundary walls
-  if (Math.abs(pt.x) < 0.001) contactArea += effOri.dy * effOri.dz;
-  if (Math.abs(pt.x + effOri.dx - luggage.length) < 0.001) contactArea += effOri.dy * effOri.dz;
+  if (Math.abs(pt.x) < 0.01) contactArea += effOri.dy * effOri.dz;
+  if (Math.abs(pt.x + effOri.dx - luggage.length) < 0.01) contactArea += effOri.dy * effOri.dz;
 
-  if (Math.abs(pt.y) < 0.001) contactArea += effOri.dx * effOri.dz;
-  if (Math.abs(pt.y + effOri.dy - luggage.width) < 0.001) contactArea += effOri.dx * effOri.dz;
+  if (Math.abs(pt.y) < 0.01) contactArea += effOri.dx * effOri.dz;
+  if (Math.abs(pt.y + effOri.dy - luggage.width) < 0.01) contactArea += effOri.dx * effOri.dz;
 
   // Ceiling contact is minor boundary alignment (do not artificially favor premature lid stacking)
-  if (Math.abs(pt.z + effOri.dz - luggage.height) < 0.001) contactArea += (effOri.dx * effOri.dy) * 0.1;
+  if (Math.abs(pt.z + effOri.dz - luggage.height) < 0.01) contactArea += (effOri.dx * effOri.dy) * 0.1;
 
-  // Contact with other placed boxes (effective bounds)
+  // Contact with other placed boxes or obstacles (effective bounds)
   for (const b of placedRecords) {
     // Check X touch
-    if (Math.abs(pt.x + effOri.dx - b.effX) < 0.001 || Math.abs(b.effX + b.effDx - pt.x) < 0.001) {
+    if (Math.abs(pt.x + effOri.dx - b.effX) < 0.01 || Math.abs(b.effX + b.effDx - pt.x) < 0.01) {
       const yOverlap = Math.max(0, Math.min(pt.y + effOri.dy, b.effY + b.effDy) - Math.max(pt.y, b.effY));
       const zOverlap = Math.max(0, Math.min(pt.z + effOri.dz, b.effZ + b.effDz) - Math.max(pt.z, b.effZ));
       contactArea += yOverlap * zOverlap;
     }
     // Check Y touch
-    if (Math.abs(pt.y + effOri.dy - b.effY) < 0.001 || Math.abs(b.effY + b.effDy - pt.y) < 0.001) {
+    if (Math.abs(pt.y + effOri.dy - b.effY) < 0.01 || Math.abs(b.effY + b.effDy - pt.y) < 0.01) {
       const xOverlap = Math.max(0, Math.min(pt.x + effOri.dx, b.effX + b.effDx) - Math.max(pt.x, b.effX));
       const zOverlap = Math.max(0, Math.min(pt.z + effOri.dz, b.effZ + b.effDz) - Math.max(pt.z, b.effZ));
       contactArea += xOverlap * zOverlap;
     }
-    // Check Z touch (stacking support from box underneath)
-    if (Math.abs(pt.z - (b.effZ + b.effDz)) < 0.001) {
+    // Check Z touch (stacking support from box or obstacle underneath)
+    if (Math.abs(pt.z - (b.effZ + b.effDz)) < 0.01) {
       const xOverlap = Math.max(0, Math.min(pt.x + effOri.dx, b.effX + b.effDx) - Math.max(pt.x, b.effX));
       const yOverlap = Math.max(0, Math.min(pt.y + effOri.dy, b.effY + b.effDy) - Math.max(pt.y, b.effY));
       contactArea += xOverlap * yOverlap * 1.2;
@@ -154,7 +154,8 @@ function calculateContactScore(
 }
 
 /**
- * Evaluates candidate points using Extreme Points (EP) algorithm based on effective footprints
+ * Evaluates candidate points using Extreme Points (EP) algorithm based on effective footprints,
+ * extended for internal obstacles, recesses, channels, and shelf levels.
  */
 function generateExtremePoints(placedRecords: PlacedItemRecord[], luggage: Dimensions): Point3D[] {
   if (placedRecords.length === 0) {
@@ -163,7 +164,21 @@ function generateExtremePoints(placedRecords: PlacedItemRecord[], luggage: Dimen
 
   const rawPoints: Point3D[] = [{ x: 0, y: 0, z: 0 }];
 
+  // Collect boundary coordinate planes along X, Y, and Z
+  const xs = new Set<number>([0]);
+  const ys = new Set<number>([0]);
+  const zs = new Set<number>([0]);
+
   for (const b of placedRecords) {
+    xs.add(Math.round(b.effX * 1000) / 1000);
+    xs.add(Math.round((b.effX + b.effDx) * 1000) / 1000);
+
+    ys.add(Math.round(b.effY * 1000) / 1000);
+    ys.add(Math.round((b.effY + b.effDy) * 1000) / 1000);
+
+    zs.add(Math.round(b.effZ * 1000) / 1000);
+    zs.add(Math.round((b.effZ + b.effDz) * 1000) / 1000);
+
     // Primary 3 projection points
     rawPoints.push({ x: b.effX + b.effDx, y: b.effY, z: b.effZ });
     rawPoints.push({ x: b.effX, y: b.effY + b.effDy, z: b.effZ });
@@ -174,20 +189,61 @@ function generateExtremePoints(placedRecords: PlacedItemRecord[], luggage: Dimen
     rawPoints.push({ x: b.effX + b.effDx, y: b.effY, z: b.effZ + b.effDz });
     rawPoints.push({ x: b.effX, y: b.effY + b.effDy, z: b.effZ + b.effDz });
 
-    // Wall intersection projections
+    // Wall projections: allow items sitting on top of obstacles/boxes to push against container walls
+    rawPoints.push({ x: 0, y: 0, z: b.effZ + b.effDz });
+    rawPoints.push({ x: b.effX, y: 0, z: b.effZ + b.effDz });
+    rawPoints.push({ x: 0, y: b.effY, z: b.effZ + b.effDz });
+    rawPoints.push({ x: b.effX + b.effDx, y: 0, z: b.effZ + b.effDz });
+    rawPoints.push({ x: 0, y: b.effY + b.effDy, z: b.effZ + b.effDz });
+
+    // Inter-object intersection projections
     for (const other of placedRecords) {
       if (other.recordId === b.recordId) continue;
       // Along X
       if (b.effX + b.effDx <= other.effX) {
         rawPoints.push({ x: b.effX + b.effDx, y: other.effY, z: other.effZ });
+        rawPoints.push({ x: b.effX + b.effDx, y: other.effY + other.effDy, z: other.effZ });
       }
       // Along Y
       if (b.effY + b.effDy <= other.effY) {
         rawPoints.push({ x: other.effX, y: b.effY + b.effDy, z: other.effZ });
+        rawPoints.push({ x: other.effX + other.effDx, y: b.effY + b.effDy, z: other.effZ });
       }
       // Along Z
       if (b.effZ + b.effDz <= other.effZ) {
         rawPoints.push({ x: other.effX, y: other.effY, z: b.effZ + b.effDz });
+        rawPoints.push({ x: 0, y: other.effY, z: b.effZ + b.effDz });
+        rawPoints.push({ x: other.effX, y: 0, z: b.effZ + b.effDz });
+      }
+    }
+  }
+
+  // Cross-boundary intersections: enables placement in channels between obstacles
+  // and resting across obstacle platforms pushed to container corners
+  const crossProductLimit = xs.size * ys.size * zs.size;
+  if (crossProductLimit <= 6000) {
+    for (const z of zs) {
+      if (z < 0 || z >= luggage.height) continue;
+      for (const y of ys) {
+        if (y < 0 || y >= luggage.width) continue;
+        for (const x of xs) {
+          if (x < 0 || x >= luggage.length) continue;
+          rawPoints.push({ x, y, z });
+        }
+      }
+    }
+  } else {
+    // If coordinate set is large, prioritize boundary intersections at every known Z layer
+    for (const z of zs) {
+      if (z < 0 || z >= luggage.height) continue;
+      rawPoints.push({ x: 0, y: 0, z });
+      for (const b of placedRecords) {
+        rawPoints.push({ x: b.effX, y: 0, z });
+        rawPoints.push({ x: 0, y: b.effY, z });
+        rawPoints.push({ x: b.effX + b.effDx, y: 0, z });
+        rawPoints.push({ x: 0, y: b.effY + b.effDy, z });
+        rawPoints.push({ x: b.effX, y: b.effY, z });
+        rawPoints.push({ x: b.effX + b.effDx, y: b.effY + b.effDy, z });
       }
     }
   }
@@ -311,19 +367,28 @@ function runPackingPass(
         if (collides) continue;
 
         // 3. Support & stability check:
-        // Either sitting on the luggage floor (z=0) or resting on boxes beneath
+        // Either sitting on the luggage floor (z=0) or resting on boxes/obstacles beneath
         if (pt.z > 0.001) {
           let totalSupportArea = 0;
+          let hasObstacleSupport = false;
           for (const b of placedRecords) {
-            if (Math.abs((b.effZ + b.effDz) - pt.z) < 0.001) {
+            if (Math.abs((b.effZ + b.effDz) - pt.z) < 0.01) {
               const xOvr = Math.max(0, Math.min(pt.x + effDx, b.effX + b.effDx) - Math.max(pt.x, b.effX));
               const yOvr = Math.max(0, Math.min(pt.y + effDy, b.effY + b.effDy) - Math.max(pt.y, b.effY));
-              totalSupportArea += (xOvr * yOvr);
+              const area = xOvr * yOvr;
+              if (area > 0.001) {
+                totalSupportArea += area;
+                if (b.isObstacle) {
+                  hasObstacleSupport = true;
+                }
+              }
             }
           }
           const footprint = effDx * effDy;
-          if (totalSupportArea < 0.20 * footprint) {
-            // Must have at least 20% footprint support across bottom boxes
+          // Permanent obstacles (e.g. handle rails or wheel housings) are rigid support structures.
+          // Narrow rails naturally provide a smaller contact ratio (>= 5%) while securely bridging across them.
+          const requiredSupportRatio = hasObstacleSupport ? 0.05 : 0.20;
+          if (totalSupportArea < requiredSupportRatio * footprint) {
             continue;
           }
         }
@@ -413,7 +478,8 @@ function runPackingPass(
  */
 function analyzeWastedSpacePockets(
   luggage: Dimensions,
-  placed: PlacedCube[]
+  placed: PlacedCube[],
+  permanentObjects: PermanentObject[] = []
 ): WastedSpacePocket[] {
   const pockets: WastedSpacePocket[] = [];
   if (placed.length === 0) {
@@ -426,7 +492,9 @@ function analyzeWastedSpacePockets(
       width: luggage.width,
       height: luggage.height,
       volume: luggage.length * luggage.width * luggage.height,
-      description: 'Entire luggage interior is empty',
+      description: permanentObjects.length > 0
+        ? 'No packing cubes placed (interior fixtures present)'
+        : 'Entire luggage interior is empty',
     });
     return pockets;
   }
@@ -571,7 +639,7 @@ export function calculateOptimalPacking(
       wastedVolume: usableLuggageVolume,
       efficiencyPercentage: 0,
       wastedPercentage: 100,
-      wastedPockets: analyzeWastedSpacePockets(luggageDimensions, []),
+      wastedPockets: analyzeWastedSpacePockets(luggageDimensions, [], permanentObjects),
       layers: [],
       permanentObjects,
     };
@@ -700,7 +768,7 @@ export function calculateOptimalPacking(
     }
   });
 
-  const wastedPockets = analyzeWastedSpacePockets(luggageDimensions, finalPlaced);
+  const wastedPockets = analyzeWastedSpacePockets(luggageDimensions, finalPlaced, permanentObjects);
   const layers = calculateLayers(finalPlaced);
 
   return {

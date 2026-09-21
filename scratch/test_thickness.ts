@@ -106,4 +106,62 @@ for (const placed of resultObstacle.placedCubes) {
   }
 }
 
+console.log('\n--- TEST 5: User Scenario (Twin Handle Rails with 14x10x3 in Cube) ---');
+const in2cm = (v: number) => Math.round(v * 2.54 * 1000) / 1000;
+const userLuggage: LuggageProfile = {
+  id: 'luggage-rails',
+  name: 'Carry-On with Rails',
+  dimensions: { length: in2cm(18), width: in2cm(12.5), height: in2cm(7.5) },
+  permanentObjects: [
+    {
+      id: 'left-rail',
+      name: 'Left Rail',
+      dimensions: { length: in2cm(15.7), width: in2cm(1.6), height: in2cm(1.3) },
+      x: 0,
+      y: in2cm(2.8),
+      z: 0,
+    },
+    {
+      id: 'right-rail',
+      name: 'Right Rail',
+      dimensions: { length: in2cm(15.7), width: in2cm(1.6), height: in2cm(1.3) },
+      x: 0,
+      y: in2cm(8.7),
+      z: 0,
+    },
+  ],
+};
+
+const userCube: PackingCubeItem = {
+  id: 'user-cube',
+  name: 'Medium Cube',
+  dimensions: { length: in2cm(14), width: in2cm(10), height: in2cm(3) },
+  color: '#3b82f6',
+  category: 'clothing',
+  quantity: 1,
+  allowRotation: true,
+};
+
+const resultUserScenario = calculateOptimalPacking(userLuggage, [userCube], true, DEFAULT_FABRIC_THICKNESS);
+console.log(`Placed cubes count: ${resultUserScenario.placedCubes.length} of 1`);
+console.log(`Unplaced count: ${resultUserScenario.unplacedCubes.reduce((s, u) => s + u.unplacedCount, 0)}`);
+
+if (resultUserScenario.placedCubes.length !== 1) {
+  console.error('FAILED: 14x10x3 in cube should fit into 18x12.5x7.5 in luggage over twin rails!');
+  process.exit(1);
+}
+
+// Ensure no collision with rails
+for (const p of resultUserScenario.placedCubes) {
+  for (const obs of userLuggage.permanentObjects!) {
+    const overlapX = p.x < obs.x + obs.dimensions.length && p.x + p.placedLength > obs.x;
+    const overlapY = p.y < obs.y + obs.dimensions.width && p.y + p.placedWidth > obs.y;
+    const overlapZ = p.z < obs.z + obs.dimensions.height && p.z + p.placedHeight > obs.z;
+    if (overlapX && overlapY && overlapZ) {
+      console.error(`FAILED: Placed cube overlaps with obstacle ${obs.name}!`);
+      process.exit(1);
+    }
+  }
+}
+
 console.log('\nALL VERIFICATION TESTS PASSED SUCCESSFULLY!');
